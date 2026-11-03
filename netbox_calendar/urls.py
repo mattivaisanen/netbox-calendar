@@ -17,7 +17,7 @@ urlpatterns = [
     path('events/targets-preview/', views.EventTargetsPreviewView.as_view(), name='event_targets_preview'),
     path('events/<int:pk>/link/', views.EventLinkView.as_view(), name='event_link'),
     path('events/<int:pk>/unlink/<int:link_pk>/', views.EventUnlinkView.as_view(), name='event_unlink'),
-    path('events/<int:pk>/people/add/', views.EventPersonView.as_view(), name='event_person_add'),
+    path('events/<int:pk>/people/add/', views.EventPeopleAddView.as_view(), name='event_person_add'),
     path('events/<int:pk>/people/<int:person_pk>/', views.EventPersonView.as_view(), name='event_person_edit'),
     path(
         'events/<int:pk>/people/<int:person_pk>/delete/', views.EventPersonDeleteView.as_view(),

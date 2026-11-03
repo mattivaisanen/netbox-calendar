@@ -268,7 +268,10 @@ def journal_context(request, event):
         context['journal'] = entries.select_related('created_by').order_by('-created')[:JOURNAL_SHOWN]
         context['journal_total'] = entries.count()
     if request.user.has_perm('extras.add_journalentry'):
-        context['journal_form'] = JournalEntryForm()
+        form = JournalEntryForm()
+        # A short box; the user can drag it taller.
+        form.fields['comments'].widget.attrs.update(rows=3, placeholder=_('Add a journal entry'))
+        context['journal_form'] = form
     return context
 
 
@@ -500,25 +503,49 @@ class EventUnlinkView(EventChangeMixin, View):
         return redirect(event.get_absolute_url())
 
 
-class EventPersonView(EventChangeMixin, View):
-    """Add a person to an event, or change their role."""
-    template_name = 'netbox_calendar/event_person.html'
+class EventPeopleAddView(EventChangeMixin, View):
+    """
+    Add people to an event, several at a time in one role. "Add and pick
+    another role" saves and opens the form again for the next role.
+    """
+    template_name = 'netbox_calendar/event_people_add.html'
 
-    def get_person(self, event, person_pk):
-        if person_pk is None:
-            return EventPerson(event=event)
-        return get_object_or_404(EventPerson, pk=person_pk, event=event)
-
-    def get(self, request, pk, person_pk=None):
+    def get(self, request, pk):
         event = self.get_event(request, pk)
-        form = forms.EventPersonForm(instance=self.get_person(event, person_pk))
+        form = forms.AddPeopleForm(initial=request.GET.dict(), editor=request.user)
         return render(request, self.template_name, {'object': event, 'form': form})
 
-    def post(self, request, pk, person_pk=None):
+    def post(self, request, pk):
         event = self.get_event(request, pk)
-        person = self.get_person(event, person_pk)
-        if person.pk:
-            person.snapshot()
+        form = forms.AddPeopleForm(data=request.POST, editor=request.user)
+        if not form.is_valid():
+            return render(request, self.template_name, {'object': event, 'form': form})
+        # One transaction, so adding several people sends one notice.
+        with transaction.atomic():
+            added = form.save(event)
+        role = form.cleaned_data['role']
+        if added:
+            messages.success(request, _('Added {count} as {role}.').format(count=added, role=role))
+        else:
+            messages.info(request, _('Everyone picked is already {role}.').format(role=role))
+        if '_addanother' in request.POST:
+            return redirect(request.path)
+        return redirect(event.get_absolute_url())
+
+
+class EventPersonView(EventChangeMixin, View):
+    """Change the role of one person on an event, or who it is."""
+    template_name = 'netbox_calendar/event_person.html'
+
+    def get(self, request, pk, person_pk):
+        event = self.get_event(request, pk)
+        person = get_object_or_404(EventPerson, pk=person_pk, event=event)
+        return render(request, self.template_name, {'object': event, 'form': forms.EventPersonForm(instance=person)})
+
+    def post(self, request, pk, person_pk):
+        event = self.get_event(request, pk)
+        person = get_object_or_404(EventPerson, pk=person_pk, event=event)
+        person.snapshot()
         form = forms.EventPersonForm(data=request.POST, instance=person)
         if not form.is_valid():
             return render(request, self.template_name, {'object': event, 'form': form})

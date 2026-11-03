@@ -30,14 +30,14 @@ object's Events card, or **Schedule Event** above an object list.
 | Title, Type | The type sets the color, default length, reminders and who is notified. |
 | Status | *Planned*, *Confirmed*, *In progress*, *Done* or *Cancelled*. |
 | Impact | *None*, *Degraded* or *Outage*. Shown on the calendar; outage and degraded events show as busy in calendar apps. |
-| Start, End | Empty end: the type's default length. |
-| All day | Whole days in NetBox's time zone. End is then the last day. |
+| Start | When the event begins. |
+| All day | Whole days in NetBox's time zone. Ticking it switches the start to a date and hides End by; **Last day** (empty: the start day only) makes it run over several days. |
+| End by | **Length** such as `30m`, `2h` or `1d 4h`, with the end it gives shown beside it, or **End date** as a time; the buttons pick which one is shown. Empty: the type's default length. |
 | Owner | Empty on a new event: you. Notified, and may always edit. |
 | Repeat | See [Repeating events](#repeating-events). |
 | Reminders | *Same as the event type*, *No reminders*, or *Pick for this event*: tick common times (15 minutes to 1 week before) and type any others in **Other times**, such as `3d, 45m`. |
 | Objects | What the event affects: rows of *Include* or *Exclude*, a type and its objects. **Result** says it in words. See [Objects](#objects). |
 | Objects by filter | Rarely needed; see [Events by filter](#events-by-filter). |
-| Role, Users, Groups, Contacts | People to add with one role. More from the event page. |
 
 Times are in NetBox's `TIME_ZONE`.
 
@@ -54,7 +54,12 @@ Pick how the event repeats:
 | Yearly | every year on 1 September |
 | Custom | any iCal rule (RFC 5545 `RRULE`) |
 
-Each can end on a date or after a number of times, or run without an end.
+Repeat sits in the **When** section and follows the start: a weekly event
+must repeat on the start's weekday (it is ticked by default, and more days
+can be added), and the monthly and yearly kinds take their day from the
+start. **Ends** picks how it ends: **No end** (the default), **Until a day**
+(not before the start) or after a **Number of times**. **Next** under the
+repeat fields lists the next three times, and follows what is typed.
 The monthly weekday follows the start: a start on the 4th Thursday repeats
 on the 4th Thursday, a start on the 5th (last) Thursday on the last one.
 
@@ -184,8 +189,11 @@ Roles (Calendar → Event Roles) decide:
 - **Can edit:** people in the role may change the event.
 - **Notify:** people in the role get the event's notices.
 
-**Add Person** on the event page adds one; **Change role** and **Remove**
-change them. **Remove** asks for confirmation first.
+People are added on the event page, not in the event form. **Add People**
+on the People card takes a role and any mix of users, groups and contacts
+for it. **Add and pick another role** saves them and opens the form again
+for the next role. **Change role** and **Remove** change one person;
+**Remove** asks for confirmation first. The owner is set in the event form.
 
 ### Who can edit an event
 
