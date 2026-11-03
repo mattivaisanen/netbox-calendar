@@ -1,0 +1,25 @@
+{% extends 'generic/_base.html' %}
+{% load form_helpers %}
+{% load i18n %}
+
+{% block title %}{% blocktrans with event=object %}Add people to {{ event }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<form method="post" class="form-object-edit mt-3">
+  {% csrf_token %}
+  <div class="field-group my-4">
+    <div class="text-secondary mb-3">
+      {% trans "Pick a role, then the users, groups and contacts in it. For people in another role, use Add and pick another role." %}
+    </div>
+    {% for error in form.non_field_errors %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endfor %}
+    {% render_form form %}
+  </div>
+  <div class="text-end my-3">
+    <a href="{{ object.get_absolute_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+    <button type="submit" name="_addanother" class="btn btn-outline-primary">{% trans "Add and pick another role" %}</button>
+    <button type="submit" class="btn btn-primary">{% trans "Add" %}</button>
+  </div>
+</form>
+{% endblock %}
