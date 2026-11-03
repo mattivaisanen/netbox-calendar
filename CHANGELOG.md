@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: tick boxes (reminder times, *Notify on*, repeat weekdays) showed
+  as empty text fields stacked above their labels. They now sit side by
+  side as NetBox checkboxes.
 - Direct e-mail has its own **E-mail subject** and **E-mail body**
   templates (Calendar → Settings, `email_subject` and `email_body`),
   separate from the webhook message. **The e-mail body no longer uses the

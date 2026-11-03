@@ -32,6 +32,16 @@ from .models import Event, EventObject, EventPerson, EventRole, EventType, Occur
 User = get_user_model()
 
 
+class InlineCheckboxes(forms.CheckboxSelectMultiple):
+    """
+    Tick boxes side by side, styled like NetBox's own checkboxes. NetBox's
+    input template gives every <input> the "form-control" class, so Django's
+    default tick boxes show up as empty text fields stacked above their labels.
+    """
+    template_name = 'netbox_calendar/widgets/inline_checkboxes.html'
+    option_template_name = 'netbox_calendar/widgets/inline_checkbox_option.html'
+
+
 class UserLabelMixin:
     """
     Label picked users with their full name, the way NetBox's own user
@@ -180,7 +190,7 @@ def reminder_preset_field():
     return forms.MultipleChoiceField(
         # A callable, so the labels are translated per request.
         choices=lambda: [(str(v), describe_minutes([v])) for v in REMINDER_PRESETS], required=False,
-        label=_('Before the start'), widget=forms.CheckboxSelectMultiple,
+        label=_('Before the start'), widget=InlineCheckboxes,
     )
 
 
@@ -380,7 +390,7 @@ class EventTypeForm(ReminderFieldsMixin, NetBoxModelForm):
     slug = SlugField()
     color = ColorField(label=_('Color'))
     notify_on = forms.MultipleChoiceField(
-        choices=NoticeChoices, required=False, label=_('Notify on'), widget=forms.CheckboxSelectMultiple,
+        choices=NoticeChoices, required=False, label=_('Notify on'), widget=InlineCheckboxes,
         help_text=_('What people are told about. None ticked: nothing.'),
     )
     reminder_presets = reminder_preset_field()
@@ -512,7 +522,7 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         help_text=_('1 every time, 2 every other time, and so on.'),
     )
     repeat_weekdays = forms.MultipleChoiceField(
-        choices=WEEKDAY_CHOICES, required=False, label=_('On'), widget=forms.CheckboxSelectMultiple,
+        choices=WEEKDAY_CHOICES, required=False, label=_('On'), widget=InlineCheckboxes,
         help_text=_("None picked: the start's weekday."),
     )
     repeat_until = forms.DateField(required=False, label=_('Until'), widget=DatePicker())
