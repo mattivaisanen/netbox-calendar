@@ -16,7 +16,7 @@ from utilities.htmx import htmx_partial
 from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
 from . import agenda, filtersets, forms, ical, plugin_settings, tables
-from .lookup import filtered_objects, linked_objects
+from .lookup import affected_devices, filtered_objects, linked_objects
 from .models import Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting
 from .permissions import can_edit, editable
 
@@ -38,7 +38,7 @@ class EventTypeView(generic.ObjectView):
     queryset = EventType.objects.all()
 
     def get_extra_context(self, request, instance):
-        return {'reminders_text': forms.format_minutes(instance.reminders)}
+        return {'reminders_text': forms.describe_minutes(instance.reminders)}
 
 
 @register_model_view(EventType, 'add', detail=False)
@@ -165,23 +165,32 @@ def conflicts(event, user):
     return found
 
 
+#: How many affected devices the event page lists.
+DEVICES_SHOWN = 100
+
+
 @register_model_view(Event)
 class EventView(generic.ObjectView):
     queryset = EVENT_QUERYSET
 
     def get_extra_context(self, request, instance):
         objects, total = linked_objects(instance, limit=100)
+        devices = affected_devices(instance).restrict(request.user, 'view')
+        devices_total = devices.count()
         now = timezone.now()
         upcoming = instance.occurrences(now, now + timedelta(days=3660))[:10] if instance.rrule else []
         return {
             'objects': objects,
             'objects_total': total,
+            'devices': devices.select_related('site', 'role', 'device_type').order_by('name')[:DEVICES_SHOWN],
+            'devices_total': devices_total,
+            'devices_more': max(devices_total - DEVICES_SHOWN, 0),
             'filter_count': (filtered_objects(instance).count() if instance.filter_object_type_id else None),
             'people': instance.people.select_related('role', 'user', 'group', 'contact'),
             'upcoming': upcoming,
             'next_occurrence': instance.next_occurrence(now),
             'skipped': sorted(instance.skipped or ()),
-            'reminders_text': forms.format_minutes(instance.effective_reminders()),
+            'reminders_text': forms.describe_minutes(instance.effective_reminders()),
             'reminders_own': instance.reminders is not None,
             'conflicts': conflicts(instance, request.user),
             'can_edit': can_edit(request.user, instance),
@@ -277,7 +286,13 @@ class EventLinkView(EventChangeMixin, View):
 
 
 class EventUnlinkView(EventChangeMixin, View):
-    """Remove one link (POST)."""
+    """Remove one link: GET asks to confirm, POST removes it."""
+    template_name = 'netbox_calendar/event_unlink.html'
+
+    def get(self, request, pk, link_pk):
+        event = self.get_event(request, pk)
+        link = get_object_or_404(EventObject, pk=link_pk, event=event)
+        return render(request, self.template_name, {'object': event, 'link': link})
 
     def post(self, request, pk, link_pk):
         event = self.get_event(request, pk)
@@ -530,8 +545,12 @@ class FeedView(View):
         # Single events from the last 90 days on; repeating series whole.
         since = timezone.now() - timedelta(days=90)
         queryset = queryset.filter(Q(end__gte=since) | ~Q(rrule='')).select_related('event_type', 'event_owner')
-        text = ical.calendar(queryset, name=_('NetBox events'), describe=_describe)
-        return HttpResponse(text, content_type='text/calendar; charset=utf-8')
+        text = ical.calendar(queryset, name=_('NetBox events'), describe=_describe, refresh='PT1H')
+        response = HttpResponse(text, content_type='text/calendar; charset=utf-8')
+        # Shown inline, never cached by proxies: the feed is personal.
+        response['Content-Disposition'] = 'inline; filename="netbox-events.ics"'
+        response['Cache-Control'] = 'private, no-cache'
+        return response
 
 
 #

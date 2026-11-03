@@ -34,9 +34,10 @@ object's Events card, or **Schedule Event** above an object list.
 | All day | Whole days in NetBox's time zone. End is then the last day. |
 | Owner | Empty on a new event: you. Notified, and may always edit. |
 | Repeat | See [Repeating events](#repeating-events). |
-| Reminders | Times before each start, such as `2d, 4h, 15m`. Empty: the type's reminders. `none`: no reminders. |
-| Link objects of type, Objects | Objects the event affects. More can be linked from the event page. |
-| Filter object type, Filter | An event for every object matching a filter; see [Events by filter](#events-by-filter). |
+| Reminders | *Same as the event type*, *No reminders*, or *Pick for this event*: tick common times (15 minutes to 1 week before) and type any others in **Other times**, such as `3d, 45m`. |
+| Devices, Sites, Device roles, ... | What the event affects, one picker per kind of object. See [Objects](#objects). |
+| Other objects | Any other kind of object, such as interfaces or prefixes. |
+| Objects by filter | Rarely needed; see [Events by filter](#events-by-filter). |
 | Role, Users, Groups, Contacts | People to add with one role. More from the event page. |
 
 Times are in NetBox's `TIME_ZONE`.
@@ -78,12 +79,21 @@ the event changes every occurrence.
 Link any NetBox object: devices, interfaces, sites, racks, circuits,
 virtual machines, IP prefixes, and other plugins' models.
 
-- **On the event form:** pick a type, then the objects.
-- **On the event page:** **Link Objects** adds objects of another type,
-  **Unlink** removes one.
+- **On the event form:** one picker each for devices, virtual machines,
+  device roles, device types, platforms, sites, locations, regions, site
+  groups, racks, clusters, tenants and circuits. Editing the event shows
+  what is linked; removing an object from a picker unlinks it on save.
+  **Other objects** links any other kind.
+- **On the event page:** **Link Objects** adds objects of any kind.
+  **Unlink** removes one, after asking to confirm.
 - **From an object list:** tick the rows, then **Schedule Event** above the
   table. The form opens with those objects linked.
 - **From an object page:** **Schedule** on its Events card.
+
+Linking a group of devices covers every device in it, including devices
+added later: a device role covers its devices (and those of its child
+roles), a site its devices, a region the devices of its sites, and so on.
+The event page lists all of them under **Affected Devices**.
 
 ### On object pages
 
@@ -95,9 +105,9 @@ With *Scope roll-up* on (the default), events higher up also show:
 
 | On the page of | Also shows events on |
 |---|---|
-| Device | its site, the site's region and site group (and their parents), its location (and parents), rack and cluster |
+| Device | its site, the site's region and site group (and their parents), its location (and parents), rack and cluster; its role (and parents), device type, manufacturer, platform and tenant |
 | Interface, port, other device component | its device, and everything the device shows |
-| Virtual machine | its site (and region, site group), cluster and host device |
+| Virtual machine | its site (and region, site group), cluster and host device; its role, platform and tenant |
 | Rack | its site (and region, site group) and location (and parents) |
 | Location | its site (and region, site group) and parent locations |
 | Site | its region and site group (and their parents) |
@@ -105,8 +115,9 @@ With *Scope roll-up* on (the default), events higher up also show:
 
 ### Events by filter
 
-An event can cover every object matching a filter instead of a fixed list,
-for example every device with a certain platform. Pick the object type and
+Linking a role, type, platform or site already covers all its devices. For
+anything finer, an event can cover every object matching a filter, for
+example only the active devices of one platform. Pick the object type and
 write the filter as on that type's list URL:
 
 ```text
@@ -191,6 +202,24 @@ rather than deleting it, so people are told; deleting notifies nobody.
 
 Calendar apps refresh subscriptions on their own schedule, often every few
 hours.
+
+### When Outlook says "We can't add the calendar"
+
+Outlook on the web, the new Outlook, Outlook mobile and Google Calendar
+download the feed from their own internet servers, not from your computer.
+The error (often with an empty calendar name) means those servers could not
+download the feed. Check that:
+
+- the feed address opens from outside your network, for example on a phone
+  with Wi-Fi off;
+- it uses `https://` with a certificate from a public CA, not an internal one;
+- no proxy, VPN gateway or single sign-on page sits in front of it;
+- the *NetBox address* setting (`netbox_url`) is the public address, so the
+  feed page shows that address.
+
+Classic Outlook for Windows and Apple Calendar download the feed from your
+computer, so an internal address works there. If NetBox must stay internal,
+use one of those, or the per-event `.ics` download.
 
 ## Change requests from netbox-change-approval
 

@@ -2,11 +2,31 @@
 
 ## Unreleased
 
+- Upcoming Events widget: the start time now sits on the same line as the event title.
+- The event form has one picker per kind of object (devices, sites, device
+  roles, ...) and shows what is already linked when editing. Removing an
+  object from a picker unlinks it.
+- Linking a device role, device type, manufacturer, platform or tenant
+  covers its devices, like sites and locations already did.
+- The event page lists every affected device.
+- Unlinking an object from the event page asks to confirm first.
+- Reminders are set with tick boxes for common times (15 minutes to
+  1 week before) plus a box for any other time. On an event, pick whether
+  it uses the event type's reminders, its own, or none. Event and event
+  type pages show reminder times in words.
 - User groups can be added to an event as people. Each member counts as
   on the event, for notices and for editing.
 - Users are shown by full name (username when no name is set) on event
   pages, the event list, user pickers and the iCal feed.
 - Removing a person from an event asks for confirmation.
+
+## 0.1.1 (2026-11-03)
+
+- iCal feed: time zone rules start in 1970 so they cover events of every
+  year, a standard `NAME` next to `X-WR-CALNAME`, a one-hour refresh hint,
+  and the feed is served inline and not cached by proxies.
+- Calendar Feed page and usage docs explain why Outlook on the web can fail
+  to subscribe to a NetBox that is only reachable internally.
 
 ## 0.1.0 (2026-11-03)
 

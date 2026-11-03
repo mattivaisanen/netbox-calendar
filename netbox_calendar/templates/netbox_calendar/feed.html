@@ -58,6 +58,15 @@
           <li><strong>{% trans "iPhone" %}:</strong> {% trans "Settings → Calendar → Accounts → Add Subscribed Calendar." %}</li>
         </ul>
         <p class="small text-secondary mt-2 mb-0">{% trans "Calendars refresh a subscribed feed on their own schedule, often every few hours." %}</p>
+        <div class="alert alert-info small mt-3 mb-0">
+          {% blocktrans trimmed %}
+            Outlook on the web, the new Outlook and Google Calendar download the feed from their own
+            servers on the internet, not from your computer. If NetBox is only reachable inside your
+            network, or uses a certificate from an internal CA, they fail with a message such as
+            "We can't add the calendar". Classic Outlook for Windows and Apple Calendar download it
+            from your computer, so an internal address works there.
+          {% endblocktrans %}
+        </div>
       </div>
     </div>
   </div>

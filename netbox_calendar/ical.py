@@ -7,6 +7,7 @@ Times are written in NetBox's TIME_ZONE with a VTIMEZONE block, so a
 repeating event at 09:00 stays at 09:00 in Outlook across daylight saving
 changes. All-day events are dates.
 """
+from calendar import monthrange
 from datetime import datetime, timedelta, timezone as dt_timezone
 from functools import lru_cache
 from urllib.parse import urlparse
@@ -88,12 +89,24 @@ def _offset_text(delta):
     return f'{sign}{minutes // 60:02d}{minutes % 60:02d}'
 
 
+def _first_match_1970(month, nth, weekday, at):
+    """
+    The day in 1970 that a yearly rule such as "last Sunday of March" falls
+    on, at time `at`. Rules start in 1970 so they cover events of any year:
+    Outlook drops a feed whose time zone starts after its events.
+    """
+    length = monthrange(1970, month)[1]
+    days = [day for day in range(1, length + 1) if datetime(1970, month, day).weekday() == weekday]
+    day = days[-1] if nth == -1 else days[nth - 1]
+    return datetime(1970, month, day, at.hour, at.minute)
+
+
 @lru_cache(maxsize=8)
 def vtimezone(zone_name, year):
     """
     VTIMEZONE lines for `zone_name`, from its daylight saving changes in
     `year` (found by stepping through the year hour by hour). Each change
-    becomes a yearly rule such as "last Sunday of March".
+    becomes a yearly rule such as "last Sunday of March", starting in 1970.
     """
     zone = ZoneInfo(zone_name)
     lines = ['BEGIN:VTIMEZONE', f'TZID:{zone_name}']
@@ -119,9 +132,10 @@ def vtimezone(zone_name, year):
         last = (local + timedelta(days=7)).month != local.month
         day = ('MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU')[local.weekday()]
         kind = 'DAYLIGHT' if after > before else 'STANDARD'
+        first = _first_match_1970(local.month, -1 if last else nth, local.weekday(), local)
         lines += [
             f'BEGIN:{kind}',
-            f'DTSTART:{local.strftime("%Y%m%dT%H%M%S")}',
+            f'DTSTART:{first.strftime("%Y%m%dT%H%M%S")}',
             f'RRULE:FREQ=YEARLY;BYMONTH={local.month};BYDAY={-1 if last else nth}{day}',
             f'TZOFFSETFROM:{_offset_text(before)}',
             f'TZOFFSETTO:{_offset_text(after)}',
@@ -202,10 +216,11 @@ def event_lines(event, objects_text='', attendees=(), organizer=None):
     return lines
 
 
-def calendar(events, name='NetBox', method='PUBLISH', describe=None, attendees=(), organizer=None):
+def calendar(events, name='NetBox', method='PUBLISH', describe=None, attendees=(), organizer=None, refresh=None):
     """
     A whole .ics file. `describe(event)` gives the "Concerns:" text of an
-    event; `attendees` and `organizer` are (name, e-mail) for invites.
+    event; `attendees` and `organizer` are (name, e-mail) for invites;
+    `refresh` is an iCal duration such as PT1H, for subscription feeds.
     """
     lines = [
         'BEGIN:VCALENDAR',
@@ -213,8 +228,13 @@ def calendar(events, name='NetBox', method='PUBLISH', describe=None, attendees=(
         f'PRODID:{PRODID}',
         'CALSCALE:GREGORIAN',
         f'METHOD:{method}',
+        # Calendar name: NAME is the standard (RFC 7986), X-WR-CALNAME is what Outlook reads.
+        f'NAME:{escape(name)}',
         f'X-WR-CALNAME:{escape(name)}',
     ]
+    if refresh:
+        # How often subscribers should fetch the feed again.
+        lines += [f'REFRESH-INTERVAL;VALUE=DURATION:{refresh}', f'X-PUBLISHED-TTL:{refresh}']
     if not _is_utc():
         lines.append(f'X-WR-TIMEZONE:{_zone_name()}')
         lines += vtimezone(_zone_name(), timezone.localtime().year)
