@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Event Rule data has `display` and `detail`, so webhook body templates
+  written for netbox-change-approval also work for calendar notices.
+- Docs: Event Rules should use the calendar's notice types, not Object
+  created/updated/deleted.
 - Objects on an event combine as a rule: different kinds AND together
   (a device role and a location: that role's devices in that location),
   several of one kind OR together. Devices and VMs picked one by one are

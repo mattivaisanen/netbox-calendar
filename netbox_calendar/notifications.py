@@ -194,11 +194,16 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
         'comment': event.description,
     }
     emails = [user.email for user in users if user.email] + [email for _name, email in contacts]
+    # One short line on top of the title, like netbox-change-approval's
+    # `detail`, so one body template can serve both plugins.
+    detail = f"{context['when']}, by {context['by']}" if context['by'] else context['when']
     return {
         'message': message_template.render(get_setting('message'), context),
         'notice': kind,
         'event': notice,
         'id': event.pk,
+        'display': str(event),
+        'detail': detail,
         'title': event.title,
         'event_type': event.event_type.name,
         'status': event.status,
