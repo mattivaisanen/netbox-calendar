@@ -82,7 +82,7 @@ class PageTests(TestCase):
         response = self.client.post(url('event_edit', self.event.pk), {
             'title': self.event.title, 'event_type': self.event.event_type.pk, 'status': 'planned',
             'impact': 'none', 'start': timezone.localtime(self.event.start).strftime('%Y-%m-%d %H:%M:%S'),
-            'repeat': 'weekly', 'repeat_interval': 1, 'add_match': '',
+            'repeat': 'weekly', 'repeat_interval': 1, 'objects_shown': '1',
             'include__dcim__devicerole': [self.device.role.pk],
         })
         self.assertEqual(response.status_code, 302)

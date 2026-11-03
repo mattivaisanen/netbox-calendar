@@ -10,6 +10,7 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import capfirst
 from django.utils.translation import gettext as _
 from django.views.generic import View
 
@@ -330,19 +331,52 @@ class EventChangeMixin(ConditionalLoginRequiredMixin):
         return event
 
 
+def _names(objects):
+    """ "a", "a or b", "a, b or c"."""
+    names = [str(obj) for obj in objects]
+    return names[0] if len(names) == 1 else _('{names} or {last}').format(names=', '.join(names[:-1]), last=names[-1])
+
+
+def _phrase(objects):
+    """ "site Tampere 1 or Tampere 2" for objects of one type."""
+    return f'{objects[0]._meta.verbose_name} {_names(objects)}'
+
+
 def _by_type(objects):
-    """[(type name, [objects])] in the order the types first appear."""
+    """[[objects of one type], ...] in the order the types first appear."""
     groups = {}
     for obj in objects:
-        groups.setdefault(obj._meta.verbose_name, []).append(obj)
-    return list(groups.items())
+        groups.setdefault(type(obj), []).append(obj)
+    return list(groups.values())
+
+
+class EventTargetRowView(ConditionalLoginRequiredMixin, View):
+    """
+    One row of the event form's objects section (HTMX): a new, empty row,
+    or a row redrawn after its mode or type changed. Objects already picked
+    stay when only the mode changes.
+    """
+    def get(self, request):
+        if not request.user.has_perm('netbox_calendar.view_event'):
+            raise PermissionDenied
+        exclude = request.GET.get('target_mode') == forms.EXCLUDE
+        label = request.GET.get('target_type', '')
+        values = []
+        for key in request.GET:
+            parsed = forms.parse_target_field(key)
+            if parsed and parsed[0] == label:
+                values += [pk for pk in request.GET.getlist(key) if pk.isdigit()]
+        form = forms.TargetRowForm(exclude=exclude, label=label, values=values)
+        return render(request, 'netbox_calendar/inc/target_row.html', {
+            'exclude': form.exclude, 'label': form.label, 'picker': form.picker, 'type_groups': form.type_groups,
+        })
 
 
 class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
     """
-    The event form's "This event concerns" summary (HTMX): reads the
-    object pickers and the filter from the address, as the form would save
-    them, and says in words what they cover and how many devices that is.
+    The event form's Result (HTMX): reads the objects rows and the filter
+    from the address, as the form would save them, and says in plain words
+    what the event covers and how many devices that is.
     """
     template_name = 'netbox_calendar/inc/target_summary.html'
     LIMIT = 10
@@ -369,23 +403,39 @@ class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
             event.filter_query = request.GET.get('filter_query', '')
         targets = Targets(event, objects)
 
+        # The rule as lines: what is in, then what is left out.
+        included = []
+        criteria = [_phrase(objs) for objs in targets.criteria.values()]
+        if targets.filter_is_criterion:
+            criteria.append(_('matching the filter {filter}').format(filter=event.filter_query))
+        if criteria:
+            included.append(_('Devices and VMs with {criteria}').format(criteria=_(' and ').join(criteria)))
+        included += [capfirst(_phrase(objs)) for objs in _by_type(targets.picked)]
+        if event.filter_object_type_id and not targets.filter_is_criterion and targets.filter_model:
+            included.append(_('{types} matching the filter {filter}').format(
+                types=targets.filter_model._meta.verbose_name_plural.capitalize(), filter=event.filter_query,
+            ))
+        excluded = []
+        for objs in _by_type(targets.excluded):
+            if objs[0]._meta.label_lower in DEVICE_MATCHES:
+                excluded.append(_('Devices and VMs with {criterion}').format(criterion=_phrase(objs)))
+            else:
+                excluded.append(capfirst(_phrase(objs)))
+
         devices = affected_devices(event, targets).restrict(request.user, 'view').order_by('name')
         device_count = devices.count()
         others = [obj for obj in targets.picked if not isinstance(obj, Device)]
-        filter_objects = 0
         if event.filter_object_type_id and not targets.filter_is_criterion and targets.filtered is not None:
-            filter_objects = targets.filtered.count()
+            others_count = len(others) + targets.filtered.count()
+        else:
+            others_count = len(others)
         return render(request, self.template_name, {
-            'targets': targets,
-            'match': [(objs[0]._meta.verbose_name, objs) for objs in targets.criteria.values()],
-            'picked': _by_type(targets.picked),
-            'excluded': _by_type(targets.excluded),
-            'filter_model': targets.filter_model,
-            'filter_query': event.filter_query,
+            'included': included,
+            'excluded': excluded,
             'device_count': device_count,
             'devices': devices[:self.LIMIT],
             'more_devices': max(device_count - self.LIMIT, 0),
-            'other_count': len(others) + filter_objects,
+            'other_count': others_count,
         })
 
 

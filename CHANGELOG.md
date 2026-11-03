@@ -2,11 +2,11 @@
 
 ## Unreleased
 
-- The event form's objects are in three boxes: **Devices and VMs that
-  match** (every line must match), **Also include** (picked one by one)
-  and **Never include** (wins over both). Each box has its own add menu.
-  **This event concerns** below them says the result in words and counts
-  the devices, updating as you pick. The rule itself is unchanged.
+- The event form's objects are rows: *Include* or *Exclude*, a type and
+  its objects, with a button to remove each row and **Add** for another.
+  Adding or changing a row no longer redraws the form. **Result** under
+  the rows says in plain words what the event covers and counts the
+  devices. The rule itself is unchanged.
 - The event page shows the event's journal where the empty Comments panel
   was: the five newest entries and a form to add one without leaving the
   page. The Journal tab still lists them all. Comments (set in the edit

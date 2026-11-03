@@ -1,42 +1,16 @@
 {% load helpers %}
 {% load i18n %}
-{# What the event form's objects cover, in words (EventTargetsPreviewView). #}
-<div class="alert alert-info mb-0">
-  <div class="small text-uppercase fw-bold text-secondary mb-1">{% trans "This event concerns" %}</div>
-  {% if not match and not picked and not filter_model %}
-    <div class="text-secondary">{% trans "Nothing yet. Add a condition or an object above." %}</div>
+{# What the event form's objects cover, in plain words (EventTargetsPreviewView). #}
+<div class="border rounded p-3">
+  {% if not included %}
+    <span class="text-secondary">{% trans "Nothing yet. Add a row above." %}</span>
   {% else %}
-    <div>
-      {% if match or targets.filter_is_criterion %}
-        {% trans "Devices and VMs" %}
-        {% for type_name, objects in match %}
-          {% if not forloop.first %}<strong class="text-blue">{% trans "and" %}</strong>{% endif %}
-          {% blocktrans %}with {{ type_name }}{% endblocktrans %}
-          {% for obj in objects %}<strong>{{ obj }}</strong>{% if not forloop.last %} {% trans "or" %} {% endif %}{% endfor %}
-        {% endfor %}
-        {% if targets.filter_is_criterion %}
-          {% if match %}<strong class="text-blue">{% trans "and" %}</strong>{% endif %}
-          {% blocktrans with types=filter_model|meta:"verbose_name_plural" %}matching the {{ types }} filter{% endblocktrans %}
-          <code>{{ filter_query }}</code>
-        {% endif %}
-      {% endif %}
-      {% for type_name, objects in picked %}
-        {% if match or targets.filter_is_criterion or not forloop.first %}
-          <strong class="text-green">{% trans "plus" %}</strong> {{ type_name }}
-        {% else %}{{ type_name|capfirst }}{% endif %}
-        {% for obj in objects %}<strong>{{ obj }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}
-      {% endfor %}
-      {% if filter_model and not targets.filter_is_criterion %}
-        {% if match or picked %}<strong class="text-green">{% trans "plus" %}</strong>{% endif %}
-        {% blocktrans with types=filter_model|meta:"verbose_name_plural" %}{{ types }} matching{% endblocktrans %}
-        <code>{{ filter_query }}</code>
-      {% endif %}
-      {% for type_name, objects in excluded %}
-        <strong class="text-red">{% if forloop.first %}{% trans "except" %}{% else %}{% trans "and" %}{% endif %}</strong>
-        {{ type_name }}
-        {% for obj in objects %}<strong>{{ obj }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}
-      {% endfor %}
-    </div>
+    {% for line in included %}
+      <div><i class="mdi mdi-check text-success"></i> {{ line }}</div>
+    {% endfor %}
+    {% for line in excluded %}
+      <div><i class="mdi mdi-close text-danger"></i> {% trans "Not:" %} {{ line }}</div>
+    {% endfor %}
     <div class="mt-2">
       <span class="badge text-bg-primary">
         {% blocktrans count counter=device_count %}{{ counter }} device{% plural %}{{ counter }} devices{% endblocktrans %}
@@ -46,15 +20,15 @@
           {% blocktrans count counter=other_count %}{{ counter }} other object{% plural %}{{ counter }} other objects{% endblocktrans %}
         </span>
       {% endif %}
-      {% if devices %}
-        <details class="mt-2">
-          <summary class="small">{% trans "Show devices" %}</summary>
-          <ul class="small mb-0 mt-1">
-            {% for device in devices %}<li>{{ device|linkify }}</li>{% endfor %}
-            {% if more_devices %}<li class="text-secondary">{% blocktrans %}and {{ more_devices }} more{% endblocktrans %}</li>{% endif %}
-          </ul>
-        </details>
-      {% endif %}
     </div>
+    {% if devices %}
+      <details class="mt-2">
+        <summary>{% trans "Show devices" %}</summary>
+        <ul class="mb-0 mt-1">
+          {% for device in devices %}<li>{{ device|linkify }}</li>{% endfor %}
+          {% if more_devices %}<li class="text-secondary">{% blocktrans %}and {{ more_devices }} more{% endblocktrans %}</li>{% endif %}
+        </ul>
+      </details>
+    {% endif %}
   {% endif %}
 </div>

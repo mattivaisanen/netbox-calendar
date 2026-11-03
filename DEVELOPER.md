@@ -150,20 +150,19 @@ the same rule as a `Q` with `DEVICE_MATCHES`. Change both together:
 `tests/test_targets.py` checks they agree. `events_for_object()` picks
 candidates by link in SQL, then checks each with `concerns()`.
 
-The form's objects section (`TargetFieldsMixin`) has one field per kind
-and mode, named `include__<app>__<model>` or `exclude__<app>__<model>`.
-`target_boxes` sorts them into three boxes: criteria kinds (*Devices and
-VMs that match*), other included kinds (*Also include*) and excluded
-kinds (*Never include*). Each box has its own `HTMXSelect` menu
-(`add_match`, `add_include`, `add_exclude`) that re-renders the section;
-a picker exists when it has values, the event links that kind, or it was
-just chosen. `event_edit.html` and `inc/event_form.html` draw the form as
-NetBox does, except the objects section (`inc/targets.html`).
+The form's objects section (`TargetFieldsMixin`) is a list of rows:
+include or exclude, a type, and a picker. Each picker is a field named
+`include__<app>__<model>` or `exclude__<app>__<model>`; two rows of one
+type and mode post under the same name and merge. `inc/targets.html` draws
+the rows (`event_edit.html` and `inc/event_form.html` draw the rest of the
+form as NetBox does). **Add** appends a row from `EventTargetRowView`, and
+changing a row's mode or type redraws only that row, so the form does not
+move. The hidden `objects_shown` field tells saving that an empty list
+means "no objects".
 
-Below the boxes, *This event concerns* is loaded from
-`EventTargetsPreviewView` whenever a field changes. It builds `Targets`
-from the pickers (`Targets(event, objects)`) for an unsaved event, so it
-reads the same rule as `concerns()` and `affected_devices()`.
+**Result**, under the rows, is loaded from `EventTargetsPreviewView` when a
+field changes. It builds `Targets(event, objects)` for an unsaved event, so
+it reads the same rule as `concerns()` and `affected_devices()`.
 
 ## Migrations
 

@@ -85,30 +85,28 @@ class TargetFormTests(TestCase):
         self.event.links.create(object=self.device)
         self.edit_url = reverse('plugins:netbox_calendar:event_edit', args=[self.event.pk])
 
-    def test_add_menu_shows_a_picker(self):
-        # Opening shows only the kinds in use.
+    def test_rows_show_what_is_linked(self):
+        # Opening shows one row per kind in use.
         form = self.client.get(self.edit_url).context['form']
-        self.assertIn('include__dcim__device', form.fields)
-        self.assertNotIn('exclude__dcim__location', form.fields)
+        rows = [(row['label'], row['exclude']) for row in form.target_rows]
+        self.assertEqual(rows, [('dcim.device', False)])
 
-        # Choosing "Never include: Location" re-renders the section with that picker, keeping the device.
-        response = self.client.get(self.edit_url, {
-            'add_exclude': 'exclude__dcim__location', 'include__dcim__device': self.device.pk,
-        }, HTTP_HX_REQUEST='true')
-        form = response.context['form']
-        self.assertIn('exclude__dcim__location', form.fields)
-        self.assertEqual(form.initial['include__dcim__device'], [str(self.device.pk)])
-        self.assertEqual(form.initial['add_exclude'], '')
-        # Each picker sits in its box: the device under "Also include", the location under "Never include".
-        boxes = {box['key']: [field.name for field in box['fields']] for box in form.target_boxes}
-        self.assertEqual(boxes, {'match': [], 'include': ['include__dcim__device'], 'exclude': ['exclude__dcim__location']})
+        # A row switched to Exclude keeps its objects; a type Exclude doesn't offer starts the row over.
+        row_url = reverse('plugins:netbox_calendar:event_target_row')
+        response = self.client.get(row_url, {
+            'target_mode': 'exclude', 'target_type': 'dcim.device', 'include__dcim__device': self.device.pk,
+        })
+        self.assertEqual(response.context['picker'].name, 'exclude__dcim__device')
+        self.assertEqual(response.context['picker'].initial, [str(self.device.pk)])
+        response = self.client.get(row_url, {'target_mode': 'exclude', 'target_type': 'circuits.circuit'})
+        self.assertEqual(response.context['label'], '')
 
     def test_save_switches_and_removes_links(self):
         location = Location.objects.create(name='Hall', slug='hall', site=self.device.site)
         response = self.client.post(self.edit_url, {
             'title': self.event.title, 'event_type': self.event.event_type.pk, 'status': 'planned',
             'impact': 'none', 'start': timezone.localtime(self.event.start).strftime('%Y-%m-%d %H:%M:%S'), 'repeat': '',
-            'add_match': '', 'include__dcim__devicerole': [self.device.role.pk],
+            'objects_shown': '1', 'include__dcim__devicerole': [self.device.role.pk],
             'exclude__dcim__location': [location.pk],
         })
         self.assertEqual(response.status_code, 302)
@@ -122,4 +120,4 @@ class TargetFormTests(TestCase):
         })
         self.assertEqual(response.context['device_count'], 1)
         self.assertEqual(list(response.context['devices']), [self.device])
-        self.assertContains(response, excluded.name)  # Named after "except".
+        self.assertEqual(response.context['excluded'], [f'Device {excluded.name}'])

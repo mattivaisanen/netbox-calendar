@@ -1,46 +1,64 @@
-{% load form_helpers %}
 {% load i18n %}
 {% comment %}
-The event form's objects: three boxes (TargetFieldsMixin.target_boxes), then
-a summary of what the event concerns. The summary reloads itself from
-event_targets_preview whenever a field of the form changes.
+The event form's objects (TargetFieldsMixin): rows of "include or exclude,
+type, objects" with an Add button, then the Result in plain words. Rows are
+added, redrawn and removed in place, so the rest of the form stays put. The
+Result reloads from event_targets_preview when a field changes.
 {% endcomment %}
-<div class="field-group mb-5">
+<div class="field-group mb-5" id="target_fields">
   <div class="row">
     <h2 class="col-9 offset-3">{% trans "Objects" %}</h2>
   </div>
-  <div id="target_fields">
-    {% for box in form.target_boxes %}
-      <div class="calendar-target-box calendar-target-{{ box.key }} border rounded mb-3">
-        <div class="px-3 py-2 border-bottom">
-          <span class="badge calendar-target-number me-2">{{ forloop.counter }}</span>
-          <strong>{{ box.title }}</strong>
-          <div class="small text-secondary">{{ box.help }}</div>
-        </div>
-        <div class="px-3 pt-3">
-          {% for field in box.fields %}
-            {% render_field field %}
+  <div class="row mb-3">
+    <label class="col-sm-3 col-form-label text-lg-end">{% trans "Affects" %}</label>
+    <div class="col">
+      <div class="border rounded">
+        <div id="calendar_target_rows">
+          {% for row in form.target_rows %}
+            {% include 'netbox_calendar/inc/target_row.html' with exclude=row.exclude label=row.label picker=row.picker type_groups=row.type_groups %}
           {% endfor %}
-          {% render_field box.menu %}
+        </div>
+        <div class="p-2">
+          <button type="button" class="btn btn-primary"
+                  hx-get="{% url 'plugins:netbox_calendar:event_target_row' %}"
+                  hx-target="#calendar_target_rows" hx-swap="beforeend">
+            <i class="mdi mdi-plus-thick"></i> {% trans "Add" %}
+          </button>
         </div>
       </div>
-    {% endfor %}
+      <div class="form-text">{% trans "One row per type. Several objects in one row: any of them." %}</div>
+    </div>
   </div>
-  <div id="target_summary" class="row">
-    <div class="col offset-3"
+  <div class="row mb-3">
+    <label class="col-sm-3 col-form-label text-lg-end">{% trans "Result" %}</label>
+    <div class="col" id="calendar_target_result"
          hx-get="{% url 'plugins:netbox_calendar:event_targets_preview' %}"
-         hx-trigger="load, change from:#form_fields delay:400ms"
+         hx-trigger="load, change from:#form_fields delay:300ms, calendar:refresh from:body delay:100ms"
          hx-include="#form_fields" hx-swap="innerHTML">
-      <div class="text-secondary small">{% trans "Working out what the event concerns..." %}</div>
+      <div class="border rounded p-3 text-secondary">{% trans "Working it out..." %}</div>
     </div>
   </div>
 </div>
 <style>
-  .calendar-target-box { border-left-width: 4px !important; }
-  .calendar-target-match { border-left-color: var(--tblr-blue) !important; }
-  .calendar-target-include { border-left-color: var(--tblr-green) !important; }
-  .calendar-target-exclude { border-left-color: var(--tblr-red) !important; }
-  .calendar-target-match .calendar-target-number { background-color: var(--tblr-blue); color: #fff; }
-  .calendar-target-include .calendar-target-number { background-color: var(--tblr-green); color: #fff; }
-  .calendar-target-exclude .calendar-target-number { background-color: var(--tblr-red); color: #fff; }
+  .calendar-target-mode { width: 9rem; }
+  .calendar-target-type { width: 14rem; }
+  #calendar_target_rows:empty { display: none; }
 </style>
+<script>
+  // Remove a row, and refresh the Result after a row is removed, added or redrawn.
+  if (!window.calendarTargetRows) {
+    window.calendarTargetRows = true;
+    document.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-calendar-remove-row]');
+      if (button) {
+        button.closest('.calendar-target-row').remove();
+        document.body.dispatchEvent(new Event('calendar:refresh'));
+      }
+    });
+    document.addEventListener('htmx:afterSettle', function (event) {
+      if (event.target.closest && event.target.closest('#calendar_target_rows')) {
+        document.body.dispatchEvent(new Event('calendar:refresh'));
+      }
+    });
+  }
+</script>

@@ -35,7 +35,7 @@ object's Events card, or **Schedule Event** above an object list.
 | Owner | Empty on a new event: you. Notified, and may always edit. |
 | Repeat | See [Repeating events](#repeating-events). |
 | Reminders | *Same as the event type*, *No reminders*, or *Pick for this event*: tick common times (15 minutes to 1 week before) and type any others in **Other times**, such as `3d, 45m`. |
-| Objects | What the event affects, in three boxes: devices and VMs that match, objects also included, objects never included. **This event concerns** below says it in words. See [Objects](#objects). |
+| Objects | What the event affects: rows of *Include* or *Exclude*, a type and its objects. **Result** says it in words. See [Objects](#objects). |
 | Objects by filter | Rarely needed; see [Events by filter](#events-by-filter). |
 | Role, Users, Groups, Contacts | People to add with one role. More from the event page. |
 
@@ -98,7 +98,7 @@ virtual machines, IP prefixes, and other plugins' models.
 |---|---|
 | Different kinds (a device role and a location) | **AND**: devices of that role in that location. |
 | Several of one kind (two device roles) | **OR**: devices of either role. |
-| *Never include* (a location, a role, a device) | **NOT**: those devices are left out. |
+| *Exclude* rows (a location, a role, a device) | **NOT**: those devices are left out. |
 | Devices, VMs and other objects picked one by one | Always in, unless excluded. |
 
 Example: device roles *Access* and *Core*, location *Floor 2*, except
@@ -114,20 +114,13 @@ the **Objects** card shows the rule in words.
 
 ### Adding objects
 
-- **On the event form:** the objects are in three boxes.
-  1. **Devices and VMs that match**: **Add condition...** adds a line for
-     one kind (site, location, device role, ...). Every line must match;
-     several objects on one line mean any of them.
-  2. **Also include**: **Add objects...** adds a line for devices, VMs,
-     circuits or any other kind, picked one by one. They are always in.
-  3. **Never include**: **Exclude...** adds a line of devices, VMs, or
-     kinds that hold devices (an excluded rack leaves out its devices).
-     This box wins over the other two.
-
-  **This event concerns**, under the boxes, says the result in words and
-  counts the devices it covers; **Show devices** lists them. It updates as
-  you pick. Editing the event shows what is linked; removing an object
-  from a line unlinks it on save.
+- **On the event form:** **Add** adds a row. Pick *Include* or *Exclude*,
+  then a type, then the objects; the bin button removes the row. The type
+  menu lists kinds that pick devices and VMs (*Devices and VMs by* site,
+  role, ...) apart from *Specific objects* (a device, a circuit, ...).
+  **Result** says in words what the rows cover and counts the devices;
+  **Show devices** lists them. Editing the event shows a row per kind
+  linked; removing an object unlinks it on save.
 - **On the event page:** **Link Objects** adds objects of any kind, with
   **Exclude** to leave them out. The cross next to an object removes it,
   after asking to confirm.
