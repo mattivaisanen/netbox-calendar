@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Upcoming Events widget: the start time now sits on the same line as the event title.
+
 ## 0.1.0 (2026-11-03)
 
 First release.

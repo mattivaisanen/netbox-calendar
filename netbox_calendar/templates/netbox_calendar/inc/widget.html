@@ -6,15 +6,16 @@
   <div class="list-group list-group-flush">
     {% for entry in entries %}
       <a href="{{ entry.url }}" class="list-group-item list-group-item-action px-2 py-1">
-        <div class="d-flex justify-content-between align-items-center">
-          <span class="text-truncate">
+        {# One row: type badge and title on the left, start time (and "Now") on the right. #}
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-truncate flex-grow-1">
             <span class="badge me-1" style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};">{% if entry.icon %}<i class="mdi mdi-{{ entry.icon }}"></i>{% else %}{{ entry.type_name|slice:":1" }}{% endif %}</span>
             {{ entry.title }}
           </span>
           {% if entry.is_running %}<span class="badge text-bg-orange">{% trans "Now" %}</span>{% endif %}
-        </div>
-        <div class="small text-secondary">
-          {% if entry.all_day %}{{ entry.start|date:"D j M" }}{% else %}{{ entry.start|date:"D j M H:i" }}{% endif %}
+          <span class="small text-secondary text-nowrap">
+            {% if entry.all_day %}{{ entry.start|date:"D j M" }}{% else %}{{ entry.start|date:"D j M H:i" }}{% endif %}
+          </span>
         </div>
       </a>
     {% endfor %}
