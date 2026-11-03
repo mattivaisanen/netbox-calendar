@@ -85,15 +85,16 @@ class TabChoiceInput(forms.HiddenInput):
         super().__init__(attrs={**(attrs or {}), 'data-nbcal-tabs': json.dumps(tabs)})
 
 
-class Tabs(TabbedGroups):
+def tabs(tabs_id, *fieldsets):
     """
     NetBox's TabbedGroups with a fixed id. NetBox picks a random one, which
     can start with a digit: the tab buttons then point at "#1abc..", not a
-    valid selector, and do nothing when clicked.
+    valid selector, and do nothing when clicked. (NetBox renders only
+    TabbedGroups itself as tabs, not a subclass.)
     """
-    def __init__(self, tabs_id, *fieldsets):
-        super().__init__(*fieldsets)
-        self.id = tabs_id
+    group = TabbedGroups(*fieldsets)
+    group.id = tabs_id
+    return group
 
 
 class NextTimesWidget(forms.Widget):
@@ -830,11 +831,11 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         items = [
             'start',
             'all_day',
-            Tabs('nbcal_end_tabs', FieldSet('length', name=_('Length')), FieldSet('end', name=_('End date'))),
+            tabs('nbcal_end_tabs', FieldSet('length', name=_('Length')), FieldSet('end', name=_('End date'))),
         ]
         items += [name for name in ('repeat', 'repeat_interval', 'repeat_weekdays', 'rrule') if name in self.fields]
         if 'repeat_until' in self.fields:
-            items.append(Tabs(
+            items.append(tabs(
                 'nbcal_repeat_tabs', FieldSet('repeat_until', name=_('Until')), FieldSet('repeat_count', name=_('Times')),
             ))
         if 'repeat_next' in self.fields:
