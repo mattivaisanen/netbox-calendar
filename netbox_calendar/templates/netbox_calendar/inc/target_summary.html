@@ -2,10 +2,10 @@
 {% load i18n %}
 {# What the event form's objects cover, in plain words (EventTargetsPreviewView). #}
 <div class="card">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <h3 class="card-title mb-0">{% trans "Result" %}</h3>
+  <div class="card-header">
+    <h3 class="card-title">{% trans "Result" %}</h3>
     {% if included %}
-      <div>
+      <div class="card-actions">
         <span class="badge text-bg-primary">
           {% blocktrans count counter=device_count %}{{ counter }} device{% plural %}{{ counter }} devices{% endblocktrans %}
         </span>

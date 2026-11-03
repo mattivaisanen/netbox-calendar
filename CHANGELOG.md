@@ -7,6 +7,8 @@
   Adding or changing a row no longer redraws the form. **Result** under
   the rows says in plain words what the event covers and counts the
   devices. The rule itself is unchanged.
+- On the event page, each linked object has its own row in the Objects
+  card with an unlink button on the right.
 - Tags can be a condition: an event on a tag covers the devices and VMs
   carrying it.
 - The event page shows the event's journal where the empty Comments panel
