@@ -5,7 +5,7 @@
 - The event page shows the event's journal where the empty Comments panel
   was: the five newest entries and a form to add one without leaving the
   page. The Journal tab still lists them all. Comments (set in the edit
-  form) show only when there are some.
+  form) show only when there are some. The add form fills the card.
 - Fixed: tick boxes (reminder times, *Notify on*, repeat weekdays) showed
   as empty text fields stacked above their labels. They now sit side by
   side as NetBox checkboxes.

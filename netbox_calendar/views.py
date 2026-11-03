@@ -257,7 +257,10 @@ def journal_context(request, event):
         context['journal'] = entries.select_related('created_by').order_by('-created')[:JOURNAL_SHOWN]
         context['journal_total'] = entries.count()
     if request.user.has_perm('extras.add_journalentry'):
-        context['journal_form'] = JournalEntryForm()
+        form = JournalEntryForm()
+        # A short box; the user can drag it taller.
+        form.fields['comments'].widget.attrs.update(rows=3, placeholder=_('Add a journal entry'))
+        context['journal_form'] = form
     return context
 
 
