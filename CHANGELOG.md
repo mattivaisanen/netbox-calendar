@@ -9,6 +9,14 @@
   start) or after a number of **Times**, on two tabs.
 - Fixed: date pickers started the week on Sunday whatever the **First day
   of the week** setting. They now follow it, and shade weekends.
+- **All day** sits under the start. Ticking it switches the start and end to
+  dates without times.
+- A repeating event lists its **Next** three times under the repeat fields,
+  updated as the form is filled in.
+- The Length / End date and Until / Times tabs are joined to the field under
+  them.
+- Fixed: the tabs in the event form sometimes did nothing when clicked
+  (NetBox gives them a random id, which could start with a digit).
 - The event page shows the event's journal where the empty Comments panel
   was: the five newest entries and a form to add one without leaving the
   page. The Journal tab still lists them all. Comments (set in the edit

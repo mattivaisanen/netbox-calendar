@@ -85,6 +85,35 @@ class TabChoiceInput(forms.HiddenInput):
         super().__init__(attrs={**(attrs or {}), 'data-nbcal-tabs': json.dumps(tabs)})
 
 
+class Tabs(TabbedGroups):
+    """
+    NetBox's TabbedGroups with a fixed id. NetBox picks a random one, which
+    can start with a digit: the tab buttons then point at "#1abc..", not a
+    valid selector, and do nothing when clicked.
+    """
+    def __init__(self, tabs_id, *fieldsets):
+        super().__init__(*fieldsets)
+        self.id = tabs_id
+
+
+class NextTimesWidget(forms.Widget):
+    """
+    Read-only line with the next times a repeating event happens. Refreshed
+    (HTMX) whenever a field of the When section changes; set `text` before
+    rendering.
+    """
+    template_name = 'netbox_calendar/widgets/next_times.html'
+    text = ''
+
+    def get_context(self, name, value, attrs):
+        context = super().get_context(name, value, attrs)
+        context['widget']['text'] = self.text
+        return context
+
+    def value_from_datadict(self, data, files, name):
+        return None
+
+
 class UserLabelMixin:
     """
     Label picked users with their full name, the way NetBox's own user
@@ -607,6 +636,14 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         choices=((LENGTH, LENGTH), (END, END)), required=False,
         widget=TabChoiceInput({'length': LENGTH, 'end': END}),
     )
+    # Ticking All day redraws the When section, with dates instead of dates and times.
+    all_day = forms.BooleanField(
+        required=False, label=_('All day'),
+        widget=forms.CheckboxInput(attrs={
+            'hx-get': '.', 'hx-include': '#form_fields', 'hx-target': '#when_fields', 'hx-select': '#when_fields',
+            'hx-swap': 'outerHTML',
+        }),
+    )
 
     repeat = forms.ChoiceField(
         choices=REPEAT_CHOICES, required=False, label=_('Repeat'),
@@ -632,6 +669,7 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         choices=((UNTIL, UNTIL), (COUNT, COUNT)), required=False,
         widget=TabChoiceInput({'repeat_until': UNTIL, 'repeat_count': COUNT}),
     )
+    repeat_next = forms.CharField(required=False, label=_('Next'), widget=NextTimesWidget())
     reminder_source = forms.ChoiceField(
         choices=REMINDER_SOURCE_CHOICES, required=False, initial=REMINDERS_FROM_TYPE, label=_('Reminders'),
         widget=HTMXSelect(hx_target_id='reminder_fields'),
@@ -716,9 +754,21 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
             if 'length' not in self.initial:
                 self.initial['length'] = format_length(int((instance.end - instance.start).total_seconds() // 60))
 
+        # Redrawn by HTMX (the When section's hidden tab value is sent along): an
+        # unticked All day sends nothing, so it is off rather than the stored value.
+        if not self.is_bound and 'end_by' in self.initial and 'all_day' not in self.initial:
+            self.initial['all_day'] = False
         # An end given in the address (and no length) opens the "End date" tab.
         if not self.is_bound and self.initial.get('end') and not self.initial.get('length'):
             self.initial.setdefault('end_by', END)
+
+        # All day: the start and end are picked as dates.
+        if self.all_day_value():
+            for name in ('start', 'end'):
+                self.fields[name].widget = CalendarDatePicker()
+                value = self.initial.get(name)
+                if isinstance(value, str) and len(value) > 10:
+                    self.initial[name] = value[:10]
 
         # Reminders: from the event type, picked for this event, or none.
         reminders = instance.reminders
@@ -745,6 +795,10 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
             self.fields.pop(name, None)
         if 'repeat_until' not in self.fields:
             self.fields.pop('repeat_end_by')
+        if repeat == recurrence.NONE:
+            self.fields.pop('repeat_next')
+        else:
+            self.fields['repeat_next'].widget.text = self.next_times_text(repeat)
         if 'repeat_interval' in self.fields:
             self.fields['repeat_interval'].help_text = INTERVAL_HELP.get(repeat, '')
         if 'repeat_weekdays' in self.fields and not get_field_value(self, 'repeat_weekdays'):
@@ -775,15 +829,63 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         """
         items = [
             'start',
-            TabbedGroups(FieldSet('length', name=_('Length')), FieldSet('end', name=_('End date'))),
             'all_day',
+            Tabs('nbcal_end_tabs', FieldSet('length', name=_('Length')), FieldSet('end', name=_('End date'))),
         ]
         items += [name for name in ('repeat', 'repeat_interval', 'repeat_weekdays', 'rrule') if name in self.fields]
         if 'repeat_until' in self.fields:
-            items.append(TabbedGroups(
-                FieldSet('repeat_until', name=_('Until')), FieldSet('repeat_count', name=_('Times')),
+            items.append(Tabs(
+                'nbcal_repeat_tabs', FieldSet('repeat_until', name=_('Until')), FieldSet('repeat_count', name=_('Times')),
             ))
+        if 'repeat_next' in self.fields:
+            items.append('repeat_next')
         return FieldSet(*items, name=_('When'), html_id='when_fields')
+
+    def all_day_value(self):
+        value = get_field_value(self, 'all_day')
+        return value is True or str(value).lower() in ('on', 'true', '1')
+
+    def next_times_text(self, repeat, count=3):
+        """The next `count` times of the repeat as typed, in words ("Tue 2026-11-10 10:00, ...")."""
+        start = self.start_value()
+        if start is None:
+            return _('Set the start to see the next times.')
+        all_day = self.all_day_value()
+        if all_day:
+            start = timezone.make_aware(datetime.combine(start.date(), time()), timezone.get_current_timezone())
+
+        def value(name):
+            if name not in self.fields:
+                return None
+            try:
+                return self.fields[name].clean(get_field_value(self, name))
+            except ValidationError:
+                return None
+
+        until, times = value('repeat_until'), value('repeat_count')
+        repeat_end_by = get_field_value(self, 'repeat_end_by') if 'repeat_end_by' in self.fields else None
+        if repeat_end_by == UNTIL:
+            times = None
+        elif repeat_end_by == COUNT:
+            until = None
+        if repeat == recurrence.CUSTOM:
+            try:
+                rule = recurrence.normalize(get_field_value(self, 'rrule') or '', start)
+            except ValueError:
+                rule = ''
+        else:
+            rule = recurrence.build(
+                repeat, start, value('repeat_interval') or 1, value('repeat_weekdays') or (), until, times,
+            )
+        if not rule:
+            return _('Give the rule to see the next times.')
+        event = Event(start=start, end=start + timedelta(minutes=1), rrule=rule)
+        now = timezone.now()
+        found = recurrence.occurrences(event, now, now + timedelta(days=3660), limit=count)
+        if not found:
+            return _('No more times: the repeat has ended.')
+        style = 'D Y-m-d' if all_day else 'D Y-m-d H:i'
+        return ', '.join(date_format(timezone.localtime(occurrence.start), style) for occurrence in found)
 
     def start_value(self):
         """The start as typed or given, as a local time; None when missing or not a time."""

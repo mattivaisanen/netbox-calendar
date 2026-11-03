@@ -1,0 +1,4 @@
+{# The next times of a repeating event; redrawn by HTMX when anything in the When section changes. #}
+<div id="repeat_next" class="form-control-plaintext"
+     hx-get="." hx-include="#form_fields" hx-select="#repeat_next" hx-target="#repeat_next" hx-swap="outerHTML"
+     hx-trigger="change from:#when_fields delay:300ms">{{ widget.text }}</div>

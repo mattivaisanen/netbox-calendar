@@ -109,6 +109,33 @@ class PageTests(TestCase):
         # The date pickers start the week on the configured day (flatpickr: 1 = Monday).
         self.assertContains(self.client.get(url('event_add')), 'data-first-weekday="1"')
 
+    def test_when_section_tabs_all_day_and_next_times(self):
+        # The tabs have fixed ids; NetBox's random ones can start with a digit, which breaks the buttons.
+        page = self.client.get(url('event_add'))
+        self.assertContains(page, 'data-bs-target="#nbcal_end_tabs_2"')
+        self.assertNotContains(page, 'id="repeat_next"')
+
+        # A repeat lists its next times, as the form is filled in.
+        start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
+        query = {'start': start.strftime('%Y-%m-%d %H:%M:%S'), 'repeat': 'daily', 'repeat_interval': 2, 'end_by': ''}
+        page = self.client.get(url('event_add'), query)
+        self.assertContains(page, 'id="repeat_next"')
+        for days in (0, 2, 4):
+            self.assertContains(page, (start + timedelta(days=days)).strftime('%Y-%m-%d 10:00'))
+
+        # All day: the start is picked as a date, and the next times are days.
+        page = self.client.get(url('event_add'), {**query, 'all_day': 'on'})
+        form = page.context['form']
+        self.assertEqual(form.fields['start'].widget.__class__.__name__, 'CalendarDatePicker')
+        self.assertEqual(form.initial['start'], start.strftime('%Y-%m-%d'))
+        self.assertNotContains(page, start.strftime('%Y-%m-%d 10:00'))
+
+        # Redrawn with All day unticked, an all-day event's form shows times again.
+        self.event.all_day = True
+        self.event.save()
+        page = self.client.get(url('event_edit', self.event.pk), query)
+        self.assertEqual(page.context['form'].fields['start'].widget.__class__.__name__, 'CalendarDateTimePicker')
+
     def test_edit_keeps_links_and_lists_role_devices(self):
         # The edit form shows the linked device, so saving it unchanged keeps the link.
         form = self.client.get(url('event_edit', self.event.pk)).context['form']
