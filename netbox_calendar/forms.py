@@ -8,12 +8,15 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from circuits.models import Circuit
 from core.models import ObjectType
+from dcim.models import Device, DeviceRole, DeviceType, Location, Platform, Rack, Region, Site, SiteGroup
 from netbox.forms import (
     NetBoxModelBulkEditForm, NetBoxModelFilterSetForm, NetBoxModelForm, NetBoxModelImportForm,
 )
-from tenancy.models import Contact
+from tenancy.models import Contact, Tenant
 from users.models import Group
+from virtualization.models import Cluster, VirtualMachine
 from utilities.forms import add_blank_choice
 from utilities.forms.fields import (
     ColorField, CommentField, ContentTypeChoiceField, CSVChoiceField, CSVModelChoiceField, DynamicModelChoiceField,
@@ -107,11 +110,36 @@ def linkable_types():
     ).order_by('app_label', 'model')
 
 
+#: The objects the event form has a picker for: (field name, model, label).
+#: Links to any other type are made with "Other objects" or on the event page.
+LINK_FIELDS = (
+    ('link_devices', Device, _('Devices')),
+    ('link_virtual_machines', VirtualMachine, _('Virtual machines')),
+    ('link_device_roles', DeviceRole, _('Device roles')),
+    ('link_device_types', DeviceType, _('Device types')),
+    ('link_platforms', Platform, _('Platforms')),
+    ('link_sites', Site, _('Sites')),
+    ('link_locations', Location, _('Locations')),
+    ('link_regions', Region, _('Regions')),
+    ('link_site_groups', SiteGroup, _('Site groups')),
+    ('link_racks', Rack, _('Racks')),
+    ('link_clusters', Cluster, _('Clusters')),
+    ('link_tenants', Tenant, _('Tenants')),
+    ('link_circuits', Circuit, _('Circuits')),
+)
+
+
+def link_field_for(content_type):
+    """The event form's picker field name for objects of `content_type`, or None."""
+    model = content_type.model_class()
+    return next((name for name, field_model, _label in LINK_FIELDS if field_model is model), None)
+
+
 class LinkFieldsMixin:
     """
-    Two fields to link objects of one type: the type, and the objects. A
-    new type re-renders the form (HTMX), so the object list searches that
-    type.
+    Two fields to link objects of any other type: the type, and the
+    objects. A new type re-renders the form (HTMX), so the object list
+    searches that type.
     """
     def setup_link_fields(self):
         content_type = None
@@ -129,7 +157,7 @@ class LinkFieldsMixin:
         field.widget.attrs['selector'] = model._meta.label_lower
 
     def save_links(self, event):
-        """Link the picked objects to `event` (already saved)."""
+        """Link the picked objects to `event` (already saved). Adds only."""
         content_type = self.cleaned_data.get('link_type')
         for obj in self.cleaned_data.get('link_objects') or ():
             EventObject.objects.get_or_create(
@@ -246,9 +274,11 @@ class EventRoleImportForm(NetBoxModelImportForm):
 
 class EventForm(LinkFieldsMixin, NetBoxModelForm):
     """
-    Add or edit an event. Besides the event's own fields it links objects
-    of one type and adds people with one role on save; the event page
-    manages the rest. Repeat fields build the iCal rule (recurrence.build()).
+    Add or edit an event. Besides the event's own fields it has one picker
+    per common object type (LINK_FIELDS), filled with what is linked now:
+    saving links what was added and unlinks what was taken out. "Other
+    objects" adds links of any other type, and people are added with one
+    role. Repeat fields build the iCal rule (recurrence.build()).
     """
     event_type = DynamicModelChoiceField(queryset=EventType.objects.all(), label=_('Type'))
     event_owner = DynamicModelChoiceField(
@@ -282,13 +312,22 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
         help_text=_('Before each start, such as "1d, 1h". Empty: the event type\'s. "none": no reminders.'),
     )
 
+    # One picker per entry of LINK_FIELDS is added in __init__().
     link_type = ContentTypeChoiceField(
-        queryset=ContentType.objects.none(), required=False, label=_('Link objects of type'),
-        widget=HTMXSelect(hx_target_id='link_fields'),
+        queryset=ContentType.objects.none(), required=False, label=_('Other object type'),
+        widget=HTMXSelect(hx_target_id='other_link_fields'),
+        help_text=_('To link something not listed above, such as interfaces or prefixes. Links of other types '
+                    'are listed, and unlinked, on the event page.'),
     )
     link_objects = DynamicModelMultipleChoiceField(queryset=ContentType.objects.none(), required=False)
     filter_object_type = ContentTypeChoiceField(
-        queryset=ContentType.objects.none(), required=False, label=_('Filter object type'),
+        queryset=ContentType.objects.none(), required=False, label=_('Object type'),
+    )
+    filter_query = forms.CharField(
+        required=False, max_length=1000, label=_('Filter'),
+        help_text=_('Rarely needed: linking a device role, type, platform or site above already covers all its '
+                    'devices. For anything finer, a filter as in an object list\'s address after "?", such as '
+                    'role=core&status=active. Objects added later match too.'),
     )
 
     people_role = DynamicModelChoiceField(queryset=EventRole.objects.all(), required=False, label=_('Role'))
@@ -304,8 +343,9 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
         FieldSet('start', 'end', 'all_day', name=_('When')),
         FieldSet('repeat', 'repeat_interval', 'repeat_weekdays', 'repeat_until', 'repeat_count', 'rrule',
                  name=_('Repeat'), html_id='repeat_fields'),
-        FieldSet('link_type', 'link_objects', 'filter_object_type', 'filter_query', name=_('Objects'),
-                 html_id='link_fields'),
+        FieldSet(*(name for name, _model, _label in LINK_FIELDS), name=_('Objects')),
+        FieldSet('link_type', 'link_objects', name=_('Other objects'), html_id='other_link_fields'),
+        FieldSet('filter_object_type', 'filter_query', name=_('Objects by filter')),
         FieldSet('people_role', 'people_users', 'people_contacts', name=_('Add people')),
         FieldSet('reminders', name=_('Notifications')),
     )
@@ -319,10 +359,14 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['link_type'].queryset = linkable_types()
+        # Types with their own picker are left out of "Other objects".
+        self.fields['link_type'].queryset = linkable_types().exclude(
+            pk__in=[ContentType.objects.get_for_model(model).pk for _name, model, _label in LINK_FIELDS],
+        )
         self.fields['filter_object_type'].queryset = linkable_types()
-        self.setup_link_fields()
         instance = self.instance
+        self.add_link_pickers()
+        self.setup_link_fields()
 
         if instance.pk and not self.is_bound:
             # Show the repeat fields for the stored rule, unless the form is re-rendered with new values.
@@ -355,6 +399,20 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
         if editor is not None and not editor.has_perm('users.view_user'):
             for name in ('event_owner', 'people_users'):
                 self.fields.pop(name, None)
+
+    def add_link_pickers(self):
+        """One picker per entry of LINK_FIELDS, showing what the event links now, so editing keeps it."""
+        linked = {}
+        if self.instance.pk:
+            for type_id, object_id in self.instance.links.values_list('object_type_id', 'object_id'):
+                linked.setdefault(type_id, []).append(object_id)
+        for name, model, label in LINK_FIELDS:
+            self.fields[name] = DynamicModelMultipleChoiceField(
+                queryset=model.objects.all(), required=False, label=label, selector=True,
+            )
+            # Already set when the form is re-rendered, or opened with objects picked.
+            if name not in self.initial:
+                self.initial[name] = linked.get(ContentType.objects.get_for_model(model).pk, [])
 
     def clean(self):
         super().clean()
@@ -397,8 +455,32 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
             self.add_error('people_role', _('Pick the role of the people added.'))
         return data
 
+    def save_picked_links(self, event):
+        """
+        Make the event's links of each picker's type match the picker: link
+        what was added, unlink what was taken out. Links to objects deleted
+        since are kept (the event page shows them struck through).
+        """
+        for name, model, _label in LINK_FIELDS:
+            if name not in self.cleaned_data:
+                continue
+            content_type = ContentType.objects.get_for_model(model)
+            picked = {obj.pk: obj for obj in self.cleaned_data[name] or ()}
+            current = {link.object_id: link for link in event.links.filter(object_type=content_type)}
+            existing = set(model.objects.filter(pk__in=current).values_list('pk', flat=True))
+            for object_id, link in current.items():
+                if object_id not in picked and object_id in existing:
+                    link.snapshot()
+                    link.delete()
+            for object_id, obj in picked.items():
+                if object_id not in current:
+                    EventObject.objects.create(
+                        event=event, object_type=content_type, object_id=object_id, object_repr=str(obj)[:200],
+                    )
+
     def save(self, *args, **kwargs):
         event = super().save(*args, **kwargs)
+        self.save_picked_links(event)
         self.save_links(event)
         role = self.cleaned_data.get('people_role')
         if role is not None:

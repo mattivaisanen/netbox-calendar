@@ -22,7 +22,7 @@ events repeat, how notices are sent or who may edit.
 | `models.py` | `EventType`, `EventRole`, `Event` (NetBox models), `EventObject` and `EventPerson` (change-logged parts of an event), plus plain `FeedToken`, `SentNotice` and `PluginSetting`. `all_day_bounds()`. |
 | `recurrence.py` | Everything about repeating: validating and normalizing an RRULE, the occurrences in a window, the form's simple choices (`build()` / `parse_simple()`), and the rule in words (`describe()`). |
 | `agenda.py` | Turns events (and change requests) into `Entry` rows for the month grid, timeline and widget. |
-| `lookup.py` | Linked objects, events by filter (`filter_query` run through the model's own filterset), and the scope roll-up (`scopes()`): which events concern an object. |
+| `lookup.py` | Linked objects, events by filter (`filter_query` run through the model's own filterset), the scope roll-up (`scopes()`: which events concern an object) and its reverse (`affected_devices()`: which devices an event concerns). |
 | `permissions.py` | The edit rule: owner, editing role, superuser or the `manage` action. `editable()` narrows a queryset, `can_edit()` checks one event. |
 | `signals.py` | Edit notices (scheduled, changed, cancelled), collected per transaction and sent on commit. |
 | `jobs.py` | The five-minute system job: automatic status, reminders, start and end notices, each sent once (`SentNotice`). |

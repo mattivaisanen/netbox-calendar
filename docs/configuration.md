@@ -13,7 +13,7 @@ setting except `reminder_grace_minutes` on **Calendar → Settings**; see
 | `restrict_editing` | `True` | Only the owner, people in a role that can edit, superusers and users with the `manage` action may change an event. `False`: NetBox permissions only. See [usage.md](usage.md#who-can-edit-an-event). |
 | `conflict_warnings` | `True` | Warn on the event page when another event overlaps on the same object. |
 | `freeze_banner` | `True` | The **Change freeze** button in the top bar while a change freeze event runs. |
-| `scope_rollup` | `True` | Events on a site, location, rack or cluster also show on the devices and VMs in it. |
+| `scope_rollup` | `True` | Events on a site, region, location, rack, cluster, device role, device type, platform or tenant also concern its devices and VMs. |
 | `change_requests` | `True` | Show netbox-change-approval's scheduled change requests on the month view and timeline, when that plugin is installed. |
 | `auto_status` | `True` | Single events move to *In progress* at their start and *Done* at their end. |
 | `first_weekday` | `0` | First column of the month view: `0` Monday ... `6` Sunday. |
