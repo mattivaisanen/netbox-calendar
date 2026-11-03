@@ -25,9 +25,28 @@ from utilities.forms.widgets import DatePicker, DateTimePicker, HTMXSelect
 
 from . import plugin_settings, recurrence
 from .choices import EventStatusChoices, ImpactChoices, NoticeChoices
-from .models import Event, EventObject, EventPerson, EventRole, EventType
+from .models import Event, EventObject, EventPerson, EventRole, EventType, display_name
 
 User = get_user_model()
+
+
+class UserLabelMixin:
+    """
+    Label picked users with their full name, the way NetBox's own user
+    search lists them ("jdoe (Jane Doe)"), so a saved choice reads the same
+    when the form is opened again.
+    """
+    def label_from_instance(self, obj):
+        name = display_name(obj)
+        return f'{obj.username} ({name})' if name != obj.username else obj.username
+
+
+class UserChoiceField(UserLabelMixin, DynamicModelChoiceField):
+    pass
+
+
+class UserMultipleChoiceField(UserLabelMixin, DynamicModelMultipleChoiceField):
+    pass
 
 REPEAT_CHOICES = (
     (recurrence.NONE, _('Does not repeat')),
@@ -251,7 +270,7 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
     manages the rest. Repeat fields build the iCal rule (recurrence.build()).
     """
     event_type = DynamicModelChoiceField(queryset=EventType.objects.all(), label=_('Type'))
-    event_owner = DynamicModelChoiceField(
+    event_owner = UserChoiceField(
         queryset=User.objects.all(), required=False, label=_('Owner'),
         help_text=_('Empty on a new event: you.'),
     )
@@ -292,7 +311,11 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
     )
 
     people_role = DynamicModelChoiceField(queryset=EventRole.objects.all(), required=False, label=_('Role'))
-    people_users = DynamicModelMultipleChoiceField(queryset=User.objects.all(), required=False, label=_('Users'))
+    people_users = UserMultipleChoiceField(queryset=User.objects.all(), required=False, label=_('Users'))
+    people_groups = DynamicModelMultipleChoiceField(
+        queryset=Group.objects.all(), required=False, label=_('Groups'),
+        help_text=_('Everyone in the group is on the event.'),
+    )
     people_contacts = DynamicModelMultipleChoiceField(
         queryset=Contact.objects.all(), required=False, label=_('Contacts'),
         help_text=_('People without a NetBox account; notified by e-mail.'),
@@ -306,7 +329,7 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
                  name=_('Repeat'), html_id='repeat_fields'),
         FieldSet('link_type', 'link_objects', 'filter_object_type', 'filter_query', name=_('Objects'),
                  html_id='link_fields'),
-        FieldSet('people_role', 'people_users', 'people_contacts', name=_('Add people')),
+        FieldSet('people_role', 'people_users', 'people_groups', 'people_contacts', name=_('Add people')),
         FieldSet('reminders', name=_('Notifications')),
     )
 
@@ -349,12 +372,14 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
         for name in unused:
             self.fields.pop(name, None)
 
-        # Picking users needs permission to view them; without it the
+        # Picking users or groups needs permission to view them; without it the
         # owner stays as it is (yourself on a new event).
         editor = getattr(instance, '_calendar_editor', None)
         if editor is not None and not editor.has_perm('users.view_user'):
             for name in ('event_owner', 'people_users'):
                 self.fields.pop(name, None)
+        if editor is not None and not editor.has_perm('users.view_group'):
+            self.fields.pop('people_groups', None)
 
     def clean(self):
         super().clean()
@@ -393,7 +418,8 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
 
         if data.get('link_type') and not data.get('link_objects') and 'link_objects' in self.fields:
             self.add_error('link_objects', _('Pick the objects to link, or clear the type.'))
-        if (data.get('people_users') or data.get('people_contacts')) and not data.get('people_role'):
+        if any(data.get(name) for name in ('people_users', 'people_groups', 'people_contacts')) \
+                and not data.get('people_role'):
             self.add_error('people_role', _('Pick the role of the people added.'))
         return data
 
@@ -404,6 +430,8 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
         if role is not None:
             for user in self.cleaned_data.get('people_users') or ():
                 EventPerson.objects.get_or_create(event=event, role=role, user=user)
+            for group in self.cleaned_data.get('people_groups') or ():
+                EventPerson.objects.get_or_create(event=event, role=role, group=group)
             for contact in self.cleaned_data.get('people_contacts') or ():
                 EventPerson.objects.get_or_create(event=event, role=role, contact=contact)
         return event
@@ -427,8 +455,8 @@ class EventFilterForm(NetBoxModelFilterSetForm):
     ))
     after = forms.DateTimeField(required=False, label=_('Ends after'), widget=DateTimePicker())
     before = forms.DateTimeField(required=False, label=_('Starts before'), widget=DateTimePicker())
-    owner_id = DynamicModelMultipleChoiceField(queryset=User.objects.all(), required=False, label=_('Owner'))
-    person_id = DynamicModelMultipleChoiceField(queryset=User.objects.all(), required=False, label=_('Person'))
+    owner_id = UserMultipleChoiceField(queryset=User.objects.all(), required=False, label=_('Owner'))
+    person_id = UserMultipleChoiceField(queryset=User.objects.all(), required=False, label=_('Person'))
     mine = forms.NullBooleanField(required=False, label=_('Mine'), widget=forms.Select(
         choices=(('', '---------'), ('true', _('Owned by or including me'))),
     ))
@@ -440,7 +468,7 @@ class EventBulkEditForm(NetBoxModelBulkEditForm):
     event_type = DynamicModelChoiceField(queryset=EventType.objects.all(), required=False, label=_('Type'))
     status = forms.ChoiceField(choices=add_blank_choice(EventStatusChoices), required=False, label=_('Status'))
     impact = forms.ChoiceField(choices=add_blank_choice(ImpactChoices), required=False, label=_('Impact'))
-    event_owner = DynamicModelChoiceField(queryset=User.objects.all(), required=False, label=_('Owner'))
+    event_owner = UserChoiceField(queryset=User.objects.all(), required=False, label=_('Owner'))
     description = forms.CharField(required=False, max_length=200, label=_('Description'))
     comments = CommentField()
 
@@ -485,14 +513,15 @@ class LinkObjectsForm(LinkFieldsMixin, forms.Form):
 
 class EventPersonForm(forms.ModelForm):
     role = DynamicModelChoiceField(queryset=EventRole.objects.all(), label=_('Role'))
-    user = DynamicModelChoiceField(queryset=User.objects.all(), required=False, label=_('User'))
+    user = UserChoiceField(queryset=User.objects.all(), required=False, label=_('User'))
+    group = DynamicModelChoiceField(queryset=Group.objects.all(), required=False, label=_('Group'))
     contact = DynamicModelChoiceField(queryset=Contact.objects.all(), required=False, label=_('Contact'))
 
-    fieldsets = (FieldSet('role', 'user', 'contact'),)
+    fieldsets = (FieldSet('role', 'user', 'group', 'contact'),)
 
     class Meta:
         model = EventPerson
-        fields = ('role', 'user', 'contact')
+        fields = ('role', 'user', 'group', 'contact')
 
 
 class CalendarFilterForm(forms.Form):

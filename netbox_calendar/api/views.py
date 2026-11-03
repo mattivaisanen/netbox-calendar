@@ -76,6 +76,6 @@ class EventObjectViewSet(EventPartViewSet):
 
 
 class EventPersonViewSet(EventPartViewSet):
-    queryset = EventPerson.objects.select_related('event', 'role', 'user', 'contact')
+    queryset = EventPerson.objects.select_related('event', 'role', 'user', 'group', 'contact')
     serializer_class = serializers.EventPersonSerializer
     filterset_fields = ('event', 'role', 'user', 'contact')

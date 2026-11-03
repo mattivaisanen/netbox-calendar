@@ -3,8 +3,8 @@ Event types, roles, events, and what an event is linked to.
 
 EventType, EventRole and Event are NetBoxModels: change log, tags, custom
 fields, REST API and Event Rules come with that. EventObject (an event's
-link to any NetBox object) and EventPerson (a user or contact on an event,
-with a role) are change-logged, their entries shown under the event.
+link to any NetBox object) and EventPerson (a user, user group or contact
+on an event, with a role) are change-logged, their entries shown under the event.
 FeedToken, SentNotice and PluginSetting are plain bookkeeping.
 """
 from datetime import datetime, time, timedelta
@@ -23,6 +23,20 @@ from utilities.fields import ColorField
 
 from . import recurrence
 from .choices import EventStatusChoices, ImpactChoices, NoticeChoices
+
+
+def display_name(user):
+    """A user's full name, or their username when no name is set."""
+    if user is None:
+        return ''
+    return user.get_full_name() or user.username
+
+
+def involving(user):
+    """Filter for the events `user` owns or is on, directly or through a group."""
+    return (
+        models.Q(event_owner=user) | models.Q(people__user=user) | models.Q(people__group__users=user)
+    )
 
 
 def default_notices():
@@ -204,6 +218,11 @@ class Event(NetBoxModel):
     def __str__(self):
         return self.title
 
+    @property
+    def owner_name(self):
+        """The owner's full name, or username when no name is set."""
+        return display_name(self.event_owner)
+
     def get_absolute_url(self):
         return reverse('plugins:netbox_calendar:event', args=[self.pk])
 
@@ -327,12 +346,16 @@ class EventObject(ChangeLoggedModel):
 
 
 class EventPerson(ChangeLoggedModel):
-    """A NetBox user or contact on an event, with a role."""
+    """A NetBox user, user group or contact on an event, with a role."""
     event = models.ForeignKey(to=Event, on_delete=models.CASCADE, related_name='people')
     role = models.ForeignKey(to=EventRole, verbose_name=_('role'), on_delete=models.PROTECT, related_name='+')
     user = models.ForeignKey(
         to=settings.AUTH_USER_MODEL, verbose_name=_('user'), on_delete=models.CASCADE, related_name='+',
         blank=True, null=True,
+    )
+    group = models.ForeignKey(
+        to='users.Group', verbose_name=_('group'), on_delete=models.CASCADE, related_name='+',
+        blank=True, null=True, help_text=_('Everyone in the group is on the event.'),
     )
     contact = models.ForeignKey(
         to='tenancy.Contact', verbose_name=_('contact'), on_delete=models.CASCADE, related_name='+',
@@ -344,10 +367,12 @@ class EventPerson(ChangeLoggedModel):
         verbose_name = _('event person')
         verbose_name_plural = _('event people')
         constraints = (
+            # Exactly one of user, group and contact.
             models.CheckConstraint(
-                condition=models.Q(user__isnull=False, contact__isnull=True)
-                | models.Q(user__isnull=True, contact__isnull=False),
-                name='netbox_calendar_person_user_or_contact',
+                condition=models.Q(user__isnull=False, group__isnull=True, contact__isnull=True)
+                | models.Q(user__isnull=True, group__isnull=False, contact__isnull=True)
+                | models.Q(user__isnull=True, group__isnull=True, contact__isnull=False),
+                name='netbox_calendar_person_one_of',
             ),
         )
 
@@ -359,18 +384,35 @@ class EventPerson(ChangeLoggedModel):
 
     @property
     def person_name(self):
+        """Full name of a user, name of a group or contact."""
         if self.user_id:
-            return self.user.get_full_name() or self.user.username
+            return display_name(self.user)
+        if self.group_id:
+            return self.group.name
         return str(self.contact)
 
     @property
     def email(self):
-        return (self.user.email if self.user_id else self.contact.email) or ''
+        """The e-mail address of a user or contact. Groups have none."""
+        if self.user_id:
+            return self.user.email or ''
+        if self.contact_id:
+            return self.contact.email or ''
+        return ''
+
+    @property
+    def users(self):
+        """The NetBox users this row stands for: the user, or a group's members."""
+        if self.user_id:
+            return [self.user]
+        if self.group_id:
+            return list(self.group.users.all())
+        return []
 
     def clean(self):
         super().clean()
-        if bool(self.user_id) == bool(self.contact_id):
-            raise ValidationError(_('Pick a user or a contact.'))
+        if [bool(self.user_id), bool(self.group_id), bool(self.contact_id)].count(True) != 1:
+            raise ValidationError(_('Pick one user, group or contact.'))
 
     def to_objectchange(self, action):
         objectchange = super().to_objectchange(action)

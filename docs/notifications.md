@@ -38,7 +38,7 @@ Each event type (Calendar → Event Types) decides:
 | Notify on | Which notices are sent at all. |
 | Reminders | Default reminder times, such as `1d, 2h`. An event can set its own. |
 | Notify owner | The event's owner. |
-| Notify people | People on the event whose role has **Notify** on. |
+| Notify people | People on the event whose role has **Notify** on. A group on the event means each of its members. |
 | Notify group | Every member of a NetBox group, for every event of the type. |
 | Notify subscribers | Users subscribed to a linked object (the **Subscribe** button on NetBox object pages). |
 | Notify contacts | Contacts assigned to a linked object (Organization → Contacts), by e-mail only. |

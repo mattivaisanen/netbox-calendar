@@ -37,7 +37,7 @@ object's Events card, or **Schedule Event** above an object list.
 | Reminders | Times before each start, such as `2d, 4h, 15m`. Empty: the type's reminders. `none`: no reminders. |
 | Link objects of type, Objects | Objects the event affects. More can be linked from the event page. |
 | Filter object type, Filter | An event for every object matching a filter; see [Events by filter](#events-by-filter). |
-| Role, Users, Contacts | People to add with one role. More from the event page. |
+| Role, Users, Groups, Contacts | People to add with one role. More from the event page. |
 
 Times are in NetBox's `TIME_ZONE`.
 
@@ -122,8 +122,15 @@ shows the matching objects and links to the full list.
 ## People
 
 Each event has an **owner** and any number of people in **roles**. A person
-is a NetBox user, or a contact (Organization → Contacts) for someone without
-an account, such as a vendor engineer.
+is a NetBox user, a user group (Admin → Groups), or a contact
+(Organization → Contacts) for someone without an account, such as a vendor
+engineer. A group counts as each of its members: they may edit the event
+when the role can edit, and are notified when the role notifies, so people
+joining or leaving the group are covered without changing the event.
+
+Users are shown by full name, or by username when no name is set.
+
+The owner is always one user.
 
 Roles (Calendar → Event Roles) decide:
 
@@ -131,7 +138,7 @@ Roles (Calendar → Event Roles) decide:
 - **Notify:** people in the role get the event's notices.
 
 **Add Person** on the event page adds one; **Change role** and **Remove**
-change them.
+change them. **Remove** asks for confirmation first.
 
 ### Who can edit an event
 
@@ -206,7 +213,7 @@ Under `/api/plugins/calendar/`:
 |---|---|
 | `events/` | Events. Filters as on the event list, plus `after`, `before` (ISO times) and `object_type` + `object_id` (`?object_type=dcim.device&object_id=7`). A new event's owner is the API user unless `event_owner` is given. |
 | `event-objects/` | Links between events and objects (`event`, `object_type`, `object_id`). |
-| `event-people/` | People on events (`event`, `role`, and `user` or `contact`). |
+| `event-people/` | People on events (`event`, `role`, and one of `user`, `group` or `contact`). |
 | `event-types/`, `event-roles/` | Types and roles. |
 
 Event responses include the recurrence in words and the linked objects.

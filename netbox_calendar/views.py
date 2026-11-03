@@ -177,7 +177,7 @@ class EventView(generic.ObjectView):
             'objects': objects,
             'objects_total': total,
             'filter_count': (filtered_objects(instance).count() if instance.filter_object_type_id else None),
-            'people': instance.people.select_related('role', 'user', 'contact'),
+            'people': instance.people.select_related('role', 'user', 'group', 'contact'),
             'upcoming': upcoming,
             'next_occurrence': instance.next_occurrence(now),
             'skipped': sorted(instance.skipped or ()),
@@ -315,7 +315,24 @@ class EventPersonView(EventChangeMixin, View):
 
 
 class EventPersonDeleteView(EventChangeMixin, View):
-    """Remove a person from an event (POST)."""
+    """
+    Remove a person from an event. GET asks first, in NetBox's pop-up
+    (the Remove button on the event page loads it); POST removes.
+    """
+
+    def get(self, request, pk, person_pk):
+        event = self.get_event(request, pk)
+        person = get_object_or_404(EventPerson.objects.select_related('user', 'group', 'contact'), pk=person_pk,
+                                   event=event)
+        if not htmx_partial(request):
+            return redirect(event.get_absolute_url())
+        return render(request, 'netbox_calendar/inc/confirm_remove.html', {
+            'title': _('Remove person'),
+            'question': _('Remove {person} ({role}) from {event}?').format(
+                person=person.person_name, role=person.role, event=event,
+            ),
+            'form_url': request.path,
+        })
 
     def post(self, request, pk, person_pk):
         event = self.get_event(request, pk)
@@ -512,7 +529,7 @@ class FeedView(View):
         queryset = filtersets.EventFilterSet(request.GET, queryset, request=request).qs
         # Single events from the last 90 days on; repeating series whole.
         since = timezone.now() - timedelta(days=90)
-        queryset = queryset.filter(Q(end__gte=since) | ~Q(rrule='')).select_related('event_type')
+        queryset = queryset.filter(Q(end__gte=since) | ~Q(rrule='')).select_related('event_type', 'event_owner')
         text = ical.calendar(queryset, name=_('NetBox events'), describe=_describe)
         return HttpResponse(text, content_type='text/calendar; charset=utf-8')
 

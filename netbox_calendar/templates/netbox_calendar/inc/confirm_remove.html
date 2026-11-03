@@ -1,0 +1,15 @@
+{% load i18n %}
+{# Body of NetBox's pop-up: asks before removing something from an event. #}
+<form action="{{ form_url }}" method="post">
+  {% csrf_token %}
+  <div class="modal-header">
+    <h5 class="modal-title">{{ title }}</h5>
+  </div>
+  <div class="modal-body">
+    <p class="mb-0">{{ question }}</p>
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+    <button type="submit" class="btn btn-danger">{% trans "Remove" %}</button>
+  </div>
+</form>

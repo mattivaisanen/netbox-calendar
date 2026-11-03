@@ -6,10 +6,11 @@ from django.test import TestCase
 
 from extras.models import Notification
 from tenancy.models import Contact
+from users.models import Group
 
 from .. import jobs, notifications, plugin_settings
 from ..choices import EventStatusChoices, NoticeChoices
-from ..models import EventObject, EventPerson, EventRole, SentNotice
+from ..models import EventObject, EventPerson, EventRole, SentNotice, display_name
 from .utils import commit, make_device, make_event, make_user
 
 
@@ -58,6 +59,19 @@ class EditNoticeTests(TestCase):
         users, contacts = notifications.recipients(event, actor=self.editor)
         self.assertEqual(users, [self.owner])
         self.assertEqual(contacts, [('Vendor desk', 'desk@example.com')])
+
+    def test_group_on_event_means_its_members(self):
+        event = make_event(owner=self.owner)
+        member = make_user('member', first_name='Robin', last_name='Lake')
+        group = Group.objects.create(name='Network team')
+        group.users.add(member)
+        person = EventPerson.objects.create(event=event, role=self.contact_role, group=group)
+
+        users, _contacts = notifications.recipients(event)
+        self.assertIn(member, users)
+        self.assertEqual(person.person_name, 'Network team')
+        self.assertEqual(display_name(member), 'Robin Lake')
+        self.assertEqual(display_name(self.owner), self.owner.username)
 
     def test_bell_notification_and_email(self):
         event = make_event(owner=self.owner)

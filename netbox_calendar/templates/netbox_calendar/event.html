@@ -29,7 +29,7 @@
         </tr>
         <tr><th scope="row">{% trans "Status" %}</th><td>{% badge object.get_status_display bg_color=object.get_status_color %}</td></tr>
         <tr><th scope="row">{% trans "Impact" %}</th><td>{% badge object.get_impact_display bg_color=object.get_impact_color %}</td></tr>
-        <tr><th scope="row">{% trans "Owner" %}</th><td>{{ object.event_owner|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Owner" %}</th><td>{{ object.owner_name|placeholder }}</td></tr>
         <tr><th scope="row">{% trans "Description" %}</th><td>{{ object.description|placeholder }}</td></tr>
       </table>
     </div>
@@ -155,22 +155,30 @@
       </h2>
       <table class="table table-hover">
         {% if object.event_owner %}
-          <tr><td class="text-secondary small">{% trans "Owner" %}</td><td>{{ object.event_owner.get_full_name|default:object.event_owner.username }}</td><td></td></tr>
+          <tr><td class="text-secondary small">{% trans "Owner" %}</td><td>{{ object.owner_name }}</td><td></td></tr>
         {% endif %}
         {% for person in people %}
           <tr>
             <td class="text-secondary small">{{ person.role }}</td>
             <td>
-              {% if person.contact %}{{ person.contact|linkify }}{% else %}{{ person.person_name }}{% endif %}
+              {% if person.contact %}
+                {{ person.contact|linkify }}
+              {% elif person.group %}
+                <i class="mdi mdi-account-group text-secondary" title="{% trans 'Group' %}"></i> {{ person.group|linkify }}
+              {% else %}
+                {{ person.person_name }}
+              {% endif %}
               {% if person.email %}<span class="small text-secondary">{{ person.email }}</span>{% endif %}
             </td>
             <td class="text-end text-nowrap">
               {% if can_edit %}
                 <a href="{% url 'plugins:netbox_calendar:event_person_edit' pk=object.pk person_pk=person.pk %}" class="btn btn-sm btn-outline-secondary" title="{% trans 'Change role' %}"><i class="mdi mdi-pencil"></i></a>
-                <form method="post" action="{% url 'plugins:netbox_calendar:event_person_delete' pk=object.pk person_pk=person.pk %}" class="d-inline">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-sm btn-outline-danger" title="{% trans 'Remove' %}"><i class="mdi mdi-account-remove"></i></button>
-                </form>
+                {# Asks for confirmation in NetBox's pop-up before removing. #}
+                <button type="button" class="btn btn-sm btn-outline-danger" title="{% trans 'Remove' %}"
+                        hx-get="{% url 'plugins:netbox_calendar:event_person_delete' pk=object.pk person_pk=person.pk %}"
+                        hx-target="#htmx-modal-content" data-bs-toggle="modal" data-bs-target="#htmx-modal">
+                  <i class="mdi mdi-account-remove"></i>
+                </button>
               {% endif %}
             </td>
           </tr>

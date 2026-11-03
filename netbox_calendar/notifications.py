@@ -31,7 +31,7 @@ from tenancy.models import ContactAssignment
 from . import ical, message_template
 from .choices import NoticeChoices
 from .lookup import linked_objects
-from .models import EventObject
+from .models import EventObject, display_name
 from .plugin_settings import get_setting, on
 
 logger = logging.getLogger('netbox_calendar.notifications')
@@ -66,7 +66,7 @@ def person(user):
     return {
         'id': user.pk,
         'username': user.username,
-        'name': user.get_full_name() or user.username,
+        'name': display_name(user),
         'email': user.email or '',
     }
 
@@ -88,11 +88,12 @@ def recipients(event, actor=None):
     if event_type.notify_owner and event.event_owner is not None:
         users.append(event.event_owner)
     if event_type.notify_people:
-        for row in event.people.select_related('role', 'user', 'contact'):
+        for row in event.people.select_related('role', 'user', 'group', 'contact'):
             if not row.role.notify:
                 continue
-            if row.user_id:
-                users.append(row.user)
+            if row.user_id or row.group_id:
+                # A group stands for all its members.
+                users += row.users
             elif row.contact.email:
                 contacts.append((str(row.contact), row.contact.email))
     if event_type.notify_group_id:
@@ -194,7 +195,7 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
         'owner': person(event.event_owner),
         'people': [
             {'role': row.role.name, 'name': row.person_name, 'email': row.email}
-            for row in event.people.select_related('role', 'user', 'contact')
+            for row in event.people.select_related('role', 'user', 'group', 'contact')
         ],
         'by': person(actor),
         'recipients': [person(user) for user in users],
@@ -258,14 +259,14 @@ def send_email(event, data, users, contacts):
     calendar invite (a cancelled event as a cancellation), so it lands in
     Outlook as a meeting.
     """
-    addresses = [(user.get_full_name() or user.username, user.email) for user in users if user.email]
+    addresses = [(display_name(user), user.email) for user in users if user.email]
     addresses += list(contacts)
     if not addresses:
         return
     method = 'CANCEL' if event.status == 'cancelled' else 'REQUEST'
     organizer = None
     if event.event_owner is not None and event.event_owner.email:
-        organizer = (event.event_owner.get_full_name() or event.event_owner.username, event.event_owner.email)
+        organizer = (display_name(event.event_owner), event.event_owner.email)
     invite = ical.calendar(
         [event], name=event.title, method=method, attendees=addresses, organizer=organizer,
         describe=lambda _event: ', '.join(obj['name'] for obj in data['objects']),

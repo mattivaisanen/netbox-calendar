@@ -28,7 +28,11 @@ def editable(queryset, user):
         return queryset
     if not user.is_authenticated:
         return queryset.none()
-    return queryset.filter(Q(event_owner=user) | Q(people__user=user, people__role__can_edit=True)).distinct()
+    return queryset.filter(
+        Q(event_owner=user)
+        | Q(people__user=user, people__role__can_edit=True)
+        | Q(people__group__users=user, people__role__can_edit=True)
+    ).distinct()
 
 
 def can_edit(user, event):

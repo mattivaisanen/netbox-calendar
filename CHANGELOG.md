@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- User groups can be added to an event as people. Each member counts as
+  on the event, for notices and for editing.
+- Users are shown by full name (username when no name is set) on event
+  pages, the event list, user pickers and the iCal feed.
+- Removing a person from an event asks for confirmation.
+
 ## 0.1.0 (2026-11-03)
 
 First release.
