@@ -15,6 +15,9 @@ in a sandbox. Variables:
   for notices sent by the background job)
 - link: the event's address (full when netbox_url is set)
 - comment: the event's description
+- occurrence: for a skipped, moved or brought back occurrence, what
+  happened ("Occurrence of 4 Nov 2026 22:00 skipped"); empty otherwise
+- reason: why that occurrence was skipped, moved or brought back
 
 Teams shows a single line break as a space, so the default puts a blank
 line between lines.
@@ -32,6 +35,8 @@ logger = logging.getLogger('netbox_calendar.notifications')
 DEFAULT = (
     '{{ notice }}: {{ title }}\n\n'
     '{{ event_type }}, {{ when }}\n\n'
+    '{% if occurrence %}{{ occurrence }}\n\n{% endif %}'
+    '{% if reason %}Reason: {{ reason }}\n\n{% endif %}'
     '{% if objects %}Concerns: {{ objects }}\n\n{% endif %}'
     '{% if impact %}Impact: {{ impact }}\n\n{% endif %}'
     '{% if by %}By: {{ by }}\n\n{% endif %}'
@@ -43,6 +48,7 @@ SAMPLE = {
     'impact': 'Outage', 'start': '4 Nov 2026 22:00', 'end': '4 Nov 2026 23:30',
     'when': '4 Nov 2026 22:00 - 23:30', 'objects': 'core1, core2', 'owner': 'Alex Admin', 'by': '',
     'link': 'https://netbox.example.com/plugins/calendar/events/7/', 'comment': '',
+    'occurrence': '', 'reason': '',
 }
 
 

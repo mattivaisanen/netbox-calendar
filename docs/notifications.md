@@ -13,7 +13,7 @@ The calendar tells people about events in three ways:
 | Notice | Sent when | NetBox event type |
 |---|---|---|
 | Scheduled | an event is created | Event scheduled |
-| Changed | its time, title, type, status, impact, recurrence, skipped occurrences, objects or people change | Event changed |
+| Changed | its time, title, type, status, impact, recurrence, objects or people change, or one occurrence is skipped, moved or brought back | Event changed |
 | Cancelled | its status becomes *Cancelled* | Event cancelled |
 | Reminder | at each reminder time before each occurrence | Event reminder |
 | Started | an occurrence starts | Event started |
@@ -108,6 +108,7 @@ Available in body templates as `{{ data.<field> }}` and in conditions:
 | `all_day` | `false` |
 | `recurrence` | `Every month on the 1st Wednesday`, or empty |
 | `reminder_minutes` | `120` for a reminder two hours ahead, else `null` |
+| `occurrence` | for one occurrence skipped, moved or brought back: `{"action": "moved", "original_start": "...", "start": "...", "end": "...", "reason": "...", "text": "..."}` (`action` is `skipped`, `moved` or `restored`), else `null` |
 | `link`, `url` | the event's full address (with `netbox_url`), and its path |
 | `objects_text` | what the event concerns, in words: `Device role: Access, and Location: Floor 2. Except: Location: Lab` |
 | `objects` | included objects: `[{"type": "dcim.device", "id": 7, "name": "agg-3", "link": "..."}]` |
@@ -130,7 +131,11 @@ It is also the body of direct e-mail. The default:
 
 {{ event_type }}, {{ when }}
 
-{% if objects %}Concerns: {{ objects }}
+{% if occurrence %}{{ occurrence }}
+
+{% endif %}{% if reason %}Reason: {{ reason }}
+
+{% endif %}{% if objects %}Concerns: {{ objects }}
 
 {% endif %}{% if impact %}Impact: {{ impact }}
 
@@ -141,7 +146,8 @@ It is also the body of direct e-mail. The default:
 
 Variables: `notice` (*Event reminder*), `title`, `event_type`, `status`,
 `impact` (empty for none), `start`, `end`, `when`, `objects` (the
-objects in words, as `objects_text`), `owner`, `by`, `link` and `comment` (the description). The
+objects in words, as `objects_text`), `owner`, `by`, `link`, `comment` (the description), and for one changed occurrence
+`occurrence` (what happened) and `reason`. The
 settings page refuses a template that does not render; one that fails
 later falls back to the default.
 

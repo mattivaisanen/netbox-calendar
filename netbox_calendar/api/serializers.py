@@ -10,7 +10,7 @@ from users.api.serializers import GroupSerializer, UserSerializer
 
 from ..choices import EventStatusChoices, ImpactChoices, NoticeChoices
 from ..lookup import EXCLUDABLE
-from ..models import Event, EventObject, EventPerson, EventRole, EventType
+from ..models import Event, EventObject, EventPerson, EventRole, EventType, OccurrenceChange
 
 
 class EventTypeSerializer(NetBoxModelSerializer):
@@ -46,13 +46,15 @@ class EventSerializer(NetBoxModelSerializer):
     filter_object_type = ContentTypeField(queryset=ObjectType.objects.all(), required=False, allow_null=True)
     recurrence = serializers.SerializerMethodField(read_only=True)
     links = serializers.SerializerMethodField(read_only=True)
+    occurrence_changes = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Event
         fields = (
             'id', 'url', 'display_url', 'display', 'title', 'event_type', 'status', 'impact', 'start', 'end',
-            'all_day', 'event_owner', 'description', 'comments', 'rrule', 'recurrence', 'skipped', 'reminders',
-            'filter_object_type', 'filter_query', 'links', 'tags', 'custom_fields', 'created', 'last_updated',
+            'all_day', 'event_owner', 'description', 'comments', 'rrule', 'recurrence', 'occurrence_changes',
+            'reminders', 'filter_object_type', 'filter_query', 'links', 'tags', 'custom_fields', 'created',
+            'last_updated',
         )
         brief_fields = ('id', 'url', 'display', 'title', 'start', 'end', 'status')
 
@@ -64,6 +66,14 @@ class EventSerializer(NetBoxModelSerializer):
             {'id': link.pk, 'object_type': f'{link.object_type.app_label}.{link.object_type.model}',
              'object_id': link.object_id, 'object': link.object_repr, 'exclude': link.exclude}
             for link in obj.links.all()
+        ]
+
+    def get_occurrence_changes(self, obj):
+        # Skipped and moved occurrences; changed through /occurrence-changes/.
+        return [
+            {'id': change.pk, 'original_start': change.original_start, 'start': change.start, 'end': change.end,
+             'skipped': change.is_skipped, 'reason': change.reason}
+            for change in obj.occurrence_changes.all()
         ]
 
 
@@ -105,3 +115,18 @@ class EventPersonSerializer(ChangeLogMessageSerializer, ValidatedModelSerializer
         model = EventPerson
         fields = ('id', 'url', 'display', 'event', 'role', 'user', 'group', 'contact', 'created', 'last_updated')
         brief_fields = ('id', 'url', 'display', 'event', 'role', 'user', 'group', 'contact')
+
+
+class OccurrenceChangeSerializer(ChangeLogMessageSerializer, ValidatedModelSerializer):
+    """
+    One occurrence of a repeating event skipped (no start and end) or moved,
+    with a reason. Deleting brings the occurrence back and needs a
+    `changelog_message` as the reason.
+    """
+    event = EventSerializer(nested=True)
+
+    class Meta:
+        model = OccurrenceChange
+        fields = ('id', 'url', 'display', 'event', 'original_start', 'start', 'end', 'reason', 'created',
+                  'last_updated')
+        brief_fields = ('id', 'url', 'display', 'event', 'original_start', 'start', 'end', 'reason')

@@ -19,7 +19,7 @@ events repeat, how notices are sent or who may edit.
 
 | Module | Responsibility |
 |---|---|
-| `models.py` | `EventType`, `EventRole`, `Event` (NetBox models), `EventObject` and `EventPerson` (change-logged parts of an event), plus plain `FeedToken`, `SentNotice` and `PluginSetting`. `all_day_bounds()`. |
+| `models.py` | `EventType`, `EventRole`, `Event` (NetBox models), `EventObject`, `EventPerson` and `OccurrenceChange` (change-logged parts of an event), plus plain `FeedToken`, `SentNotice` and `PluginSetting`. `all_day_bounds()`. |
 | `recurrence.py` | Everything about repeating: validating and normalizing an RRULE, the occurrences in a window, the form's simple choices (`build()` / `parse_simple()`), and the rule in words (`describe()`). |
 | `agenda.py` | Turns events (and change requests) into `Entry` rows for the month grid, timeline and widget. |
 | `lookup.py` | The targeting rule. `Targets` sorts an event's links into criteria, picked and excluded objects; `concerns()` checks one object, `affected_devices()` builds the same rule as one device query, `events_for_object()` and `describe()` build on them. Also the scope roll-up (`scopes()`) and events by filter. |
@@ -47,8 +47,16 @@ An event stores one `start`/`end` (the first occurrence) and an iCal
   zoned start; `normalize()` converts a local one.
 - `occurrences(after, before)` starts the rule at `after - duration`, so an
   occurrence that began before the window and is still running is found.
-- `skipped` holds the starts of called-off occurrences; they are left out
-  here and written as `EXDATE` in iCal.
+- `OccurrenceChange` rows skip or move one occurrence, keyed by the start
+  the rule gives it (`original_start`), always with a reason. Skipped ones
+  are left out and moved ones added at their new time. A change whose
+  original start the rule no longer produces is ignored
+  (`is_occurrence()`). In iCal a skipped one is an `EXDATE`; a moved one is
+  a second `VEVENT` with the same `UID` and a `RECURRENCE-ID`, with no
+  `EXDATE` (that would hide the override in Outlook and Google).
+- Saving or deleting an `OccurrenceChange` writes a journal entry on the
+  event and queues a *Changed* notice with `occurrence` data
+  (`signals.py`). The reason is also the change log message.
 - Searches stop at 5000 occurrences (`MAX_OCCURRENCES`), so an hourly rule
   with no end can't run away.
 - `rrule` is a plain string so any rule works; the form's *Repeat* choices

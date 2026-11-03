@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 
 from .. import recurrence
-from ..models import Event, EventType, all_day_bounds
+from ..models import Event, EventType, OccurrenceChange, all_day_bounds
 
 ZONE = ZoneInfo('Europe/Helsinki')
 
@@ -80,9 +80,37 @@ class OccurrenceTests(TestCase):
         self.assertEqual([item.start for item in found], [local(2026, 1, 6, 9, 0)])
 
     def test_skipped_occurrences_are_left_out(self):
-        event = self._event(local(2026, 1, 5, 9, 0), 'FREQ=DAILY;COUNT=3', skipped=[local(2026, 1, 6, 9, 0)])
+        event = self._event(local(2026, 1, 5, 9, 0), 'FREQ=DAILY;COUNT=3')
+        event.save()
+        OccurrenceChange.objects.create(event=event, original_start=local(2026, 1, 6, 9, 0), reason='Holiday')
         found = event.occurrences(local(2026, 1, 1), local(2026, 2, 1))
         self.assertEqual([item.start.day for item in found], [5, 7])
+
+    def test_moved_occurrence_is_at_its_new_time(self):
+        event = self._event(local(2026, 1, 5, 9, 0), 'FREQ=DAILY;COUNT=3')
+        event.save()
+        OccurrenceChange.objects.create(
+            event=event, original_start=local(2026, 1, 5, 9, 0),
+            start=local(2026, 1, 8, 13, 0), end=local(2026, 1, 8, 14, 0), reason='Vendor late',
+        )
+        found = event.occurrences(local(2026, 1, 1), local(2026, 2, 1))
+        self.assertEqual([item.start for item in found], [
+            local(2026, 1, 6, 9, 0), local(2026, 1, 7, 9, 0), local(2026, 1, 8, 13, 0),
+        ])
+        self.assertTrue(found[-1].is_moved)
+        self.assertTrue(found[-1].is_first)
+        self.assertEqual(found[-1].original_start, local(2026, 1, 5, 9, 0))
+        # Found by its new time, not its old one.
+        self.assertEqual(event.occurrences(local(2026, 1, 5), local(2026, 1, 5, 23, 0)), [])
+
+    def test_change_off_the_rule_is_ignored(self):
+        event = self._event(local(2026, 1, 5, 9, 0), 'FREQ=DAILY;COUNT=3')
+        event.save()
+        change = OccurrenceChange(event=event, original_start=local(2026, 1, 5, 10, 0), reason='Typo')
+        with self.assertRaises(ValidationError):
+            change.full_clean()
+        change.save()
+        self.assertEqual(len(event.occurrences(local(2026, 1, 1), local(2026, 2, 1))), 3)
 
     def test_single_event(self):
         event = self._event(local(2026, 1, 5, 9, 0), '')

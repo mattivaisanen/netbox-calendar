@@ -3,11 +3,14 @@ Repeating events, stored as an iCal RRULE (RFC 5545) and expanded with
 python-dateutil when shown. The rule runs in NetBox's local time zone, so
 an event at 09:00 stays at 09:00 across daylight saving changes.
 
+Single occurrences can be skipped or moved (models.OccurrenceChange);
+occurrences() applies those changes.
+
 The event form builds simple rules from a few fields (build() and
 parse_simple()); anything else can be typed as a rule. describe() puts a
 rule in words.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone as dt_timezone
 
 from dateutil import rrule as du
@@ -29,14 +32,27 @@ NONE, DAILY, WEEKLY, MONTHLY_DATE, MONTHLY_WEEKDAY, YEARLY, CUSTOM = (
 
 @dataclass(frozen=True)
 class Occurrence:
-    """One time an event happens."""
+    """
+    One time an event happens. A moved occurrence keeps the time the rule
+    gave it in `original_start`, and its OccurrenceChange in `change`.
+    """
     event: object
     start: datetime
     end: datetime
+    original_start: datetime = None
+    change: object = field(default=None, compare=False)
+
+    def __post_init__(self):
+        if self.original_start is None:
+            object.__setattr__(self, 'original_start', self.start)
 
     @property
     def is_first(self):
-        return self.start == self.event.start
+        return self.original_start == self.event.start
+
+    @property
+    def is_moved(self):
+        return self.change is not None
 
     def is_running(self, now=None):
         now = now or timezone.now()
@@ -110,11 +126,29 @@ def _until_utc(value):
     return aware.astimezone(dt_timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 
 
+def changes(event):
+    """{original start: OccurrenceChange} of `event` (uses a prefetch when there is one)."""
+    if event.pk is None:
+        return {}
+    return {change.original_start: change for change in event.occurrence_changes.all()}
+
+
+def is_occurrence(event, moment):
+    """Whether the event's rule puts an occurrence at `moment`."""
+    if not event.rrule or moment is None:
+        return moment == event.start
+    try:
+        rule = _rule(event.rrule, event.start)
+    except (ValueError, TypeError):
+        return False
+    return rule.after(_local(moment), inc=True) == moment
+
+
 def occurrences(event, after, before, limit=None):
     """
-    The occurrences of `event` that overlap [after, before), skipped ones
-    left out, oldest first. At most `limit` (and never more than
-    MAX_OCCURRENCES).
+    The occurrences of `event` that overlap [after, before), oldest first.
+    Skipped ones are left out and moved ones are at their new time. At most
+    `limit` (and never more than MAX_OCCURRENCES).
     """
     duration = event.end - event.start
     if not event.rrule:
@@ -125,17 +159,23 @@ def occurrences(event, after, before, limit=None):
         rule = _rule(event.rrule, event.start)
     except (ValueError, TypeError):
         return []
-    skipped = set(event.skipped or ())
+    changed = changes(event)
     found = []
     limit = min(limit or MAX_OCCURRENCES, MAX_OCCURRENCES)
     # An occurrence overlaps when it starts before `before` and ends after `after`.
     for count, start in enumerate(rule.xafter(_local(after - duration), inc=False)):
         if start >= before or len(found) >= limit or count >= MAX_OCCURRENCES:
             break
-        if start in skipped:
+        if start in changed:
+            # Skipped, or moved: a moved one is added below at its new time.
             continue
         found.append(Occurrence(event, start, start + duration))
-    return found
+    for change in changed.values():
+        if change.is_moved and change.start < before and change.end > after \
+                and is_occurrence(event, change.original_start):
+            found.append(Occurrence(event, change.start, change.end, change.original_start, change))
+    found.sort(key=lambda occurrence: occurrence.start)
+    return found[:limit]
 
 
 def build(kind, start, interval=1, weekdays=(), until=None, count=None):

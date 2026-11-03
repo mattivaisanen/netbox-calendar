@@ -8,6 +8,10 @@ transaction; they become one notice per event. A new event is
 becomes cancelled is "cancelled"; any other change to its time, title,
 type, status, recurrence, links or people is "changed".
 
+Skipping, moving or bringing back one occurrence (OccurrenceChange) is
+"changed" too: the notice names the occurrence and the reason, and the
+event's journal gets an entry saying the same.
+
 Deleting an event sends nothing: cancel it instead so people hear.
 """
 import logging
@@ -18,12 +22,15 @@ from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
+from extras.choices import JournalEntryKindChoices
+from extras.models import JournalEntry
+
 from . import notifications
 from .choices import EventStatusChoices, NoticeChoices
-from .models import Event, EventObject, EventPerson
+from .models import Event, EventObject, EventPerson, OccurrenceChange
 
 # Changes to these fields are worth telling people about.
-WATCHED_FIELDS = ('title', 'event_type_id', 'status', 'start', 'end', 'all_day', 'rrule', 'skipped', 'impact')
+WATCHED_FIELDS = ('title', 'event_type_id', 'status', 'start', 'end', 'all_day', 'rrule', 'impact')
 
 # When one transaction makes several notices for an event, the first one in
 # this list wins.
@@ -38,6 +45,13 @@ def _pending():
     if not hasattr(_state, 'pending'):
         _state.pending = {}
     return _state.pending
+
+
+def _occurrences():
+    """{event pk: occurrence_info()} of the occurrence changes waiting to be told."""
+    if not hasattr(_state, 'occurrences'):
+        _state.occurrences = {}
+    return _state.occurrences
 
 
 def _actor():
@@ -56,11 +70,19 @@ def _registered(pk):
     return any(getattr(item[1], 'calendar_event', None) == pk for item in connection.run_on_commit)
 
 
-def queue(pk, kind):
-    """Send notice `kind` about event `pk` when the transaction commits."""
+def queue(pk, kind, occurrence=None):
+    """
+    Send notice `kind` about event `pk` when the transaction commits.
+    `occurrence` (notifications.occurrence_info()) names one occurrence
+    that changed; the last one in a transaction is told.
+    """
     pending = _pending()
     registered = _registered(pk)
     # Without a waiting callback, anything left here is from a rolled back transaction.
+    if not registered:
+        _occurrences().pop(pk, None)
+    if occurrence is not None:
+        _occurrences()[pk] = occurrence
     current = pending.get(pk) if registered else None
     if current is not None and STRENGTH.index(current) <= STRENGTH.index(kind):
         return
@@ -73,13 +95,16 @@ def queue(pk, kind):
 
 def _send(pk, actor):
     kind = _pending().pop(pk, None)
+    occurrence = _occurrences().pop(pk, None)
     if kind is None:
         return
     event = Event.objects.filter(pk=pk).select_related('event_type', 'event_owner').first()
     if event is None:
         return
     try:
-        notifications.notify(event, kind, actor=actor)
+        notifications.notify(
+            event, kind, actor=actor, occurrence=occurrence if kind == NoticeChoices.CHANGED else None,
+        )
     except Exception:
         logger.exception('Notice about event #%s failed', pk)
 
@@ -119,3 +144,36 @@ def part_changed(sender, instance, raw=False, **kwargs):
     # A link removed because its event is being deleted: nothing to say.
     if Event.objects.filter(pk=instance.event_id).exists():
         queue(instance.event_id, NoticeChoices.CHANGED)
+
+
+def _journal(event, info, actor):
+    """A journal entry on the event saying what happened to the occurrence, and why."""
+    JournalEntry.objects.create(
+        assigned_object=event, created_by=actor,
+        kind=JournalEntryKindChoices.KIND_INFO if info['action'] == notifications.RESTORED
+        else JournalEntryKindChoices.KIND_WARNING,
+        comments=f"{info['text']}. Reason: {info['reason']}",
+    )
+
+
+@receiver(post_save, sender=OccurrenceChange)
+def occurrence_saved(sender, instance, raw=False, **kwargs):
+    if raw:
+        return
+    action = notifications.SKIPPED if instance.is_skipped else notifications.MOVED
+    info = notifications.occurrence_info(instance, action)
+    _journal(instance.event, info, _actor())
+    queue(instance.event_id, NoticeChoices.CHANGED, info)
+
+
+@receiver(post_delete, sender=OccurrenceChange)
+def occurrence_restored(sender, instance, **kwargs):
+    # Deleted along with its event: nothing to say.
+    event = Event.objects.filter(pk=instance.event_id).first()
+    if event is None:
+        return
+    instance.event = event
+    # The reason for bringing it back is the change log message (set by the page and the API).
+    info = notifications.occurrence_info(instance, notifications.RESTORED, instance._changelog_message or '')
+    _journal(event, info, _actor())
+    queue(event.pk, NoticeChoices.CHANGED, info)

@@ -10,7 +10,7 @@ from users.models import Group
 
 from .. import jobs, notifications, plugin_settings
 from ..choices import EventStatusChoices, NoticeChoices
-from ..models import EventObject, EventPerson, EventRole, SentNotice, display_name
+from ..models import EventObject, EventPerson, EventRole, OccurrenceChange, SentNotice, display_name
 from .utils import commit, make_device, make_event, make_user
 
 
@@ -30,6 +30,25 @@ class EditNoticeTests(TestCase):
             commit()
         self.assertEqual(notify.call_count, 1)
         self.assertEqual(notify.call_args.args[1], NoticeChoices.CHANGED)
+
+    def test_occurrence_change_names_the_occurrence_and_reason(self):
+        event = make_event(owner=self.owner, rrule='FREQ=DAILY')
+        original = event.start + timedelta(days=2)
+        with mock.patch.object(notifications, 'notify') as notify:
+            OccurrenceChange.objects.create(
+                event=event, original_start=original, start=original + timedelta(hours=3),
+                end=original + timedelta(hours=4), reason='Vendor late',
+            )
+            commit()
+        self.assertEqual(notify.call_args.args[1], NoticeChoices.CHANGED)
+        info = notify.call_args.kwargs['occurrence']
+        self.assertEqual((info['action'], info['reason']), (notifications.MOVED, 'Vendor late'))
+        # The message tells what happened and why, at the new time.
+        data = notifications.event_data(event, NoticeChoices.CHANGED, [], [], *notifications.occurrence_times(
+            event, info), occurrence=info)
+        self.assertIn('Reason: Vendor late', data['message'])
+        self.assertIn('moved to', data['message'])
+        self.assertEqual(data['start'], (original + timedelta(hours=3)).isoformat())
 
     def test_scheduled_then_cancelled(self):
         with mock.patch.object(notifications, 'notify') as notify:

@@ -4,7 +4,9 @@ Event types, roles, events, and what an event is linked to.
 EventType, EventRole and Event are NetBoxModels: change log, tags, custom
 fields, REST API and Event Rules come with that. EventObject (an event's
 link to any NetBox object) and EventPerson (a user, user group or contact
-on an event, with a role) are change-logged, their entries shown under the event.
+on an event, with a role) and OccurrenceChange (one occurrence of a series
+skipped or moved, with a reason) are change-logged, their entries shown
+under the event.
 FeedToken, SentNotice and PluginSetting are plain bookkeeping.
 """
 from datetime import datetime, time, timedelta
@@ -158,7 +160,7 @@ class Event(NetBoxModel):
     """
     One scheduled event, or a series when `rrule` is set. A series is one
     row: occurrences are worked out when shown (recurrence.py), and
-    `skipped` holds the start times of occurrences that were called off.
+    OccurrenceChange rows skip or move single occurrences.
 
     All-day events start at local midnight and end at the midnight after
     their last day (exclusive), so overlaps and the iCal feed need no
@@ -187,9 +189,6 @@ class Event(NetBoxModel):
     rrule = models.CharField(
         verbose_name=_('recurrence'), max_length=500, blank=True,
         help_text=_('iCal RRULE, such as FREQ=MONTHLY;BYDAY=2TU. Empty: happens once.'),
-    )
-    skipped = ArrayField(
-        base_field=models.DateTimeField(), verbose_name=_('skipped occurrences'), default=list, blank=True,
     )
     reminders = ArrayField(
         base_field=models.PositiveIntegerField(), verbose_name=_('reminders'), blank=True, null=True,
@@ -430,6 +429,78 @@ class EventPerson(ChangeLoggedModel):
     def to_objectchange(self, action):
         objectchange = super().to_objectchange(action)
         objectchange.related_object = self.event
+        return objectchange
+
+
+class OccurrenceChange(ChangeLoggedModel):
+    """
+    One occurrence of a repeating event skipped or moved, and why.
+
+    `original_start` is when the rule puts the occurrence. Without `start`
+    and `end` it is skipped; with them it happens then instead. A change
+    whose original start the rule no longer produces (the event's start or
+    rule was edited since) is kept but has no effect.
+    """
+    event = models.ForeignKey(to=Event, on_delete=models.CASCADE, related_name='occurrence_changes')
+    original_start = models.DateTimeField(verbose_name=_('original start'))
+    start = models.DateTimeField(verbose_name=_('new start'), blank=True, null=True)
+    end = models.DateTimeField(verbose_name=_('new end'), blank=True, null=True)
+    reason = models.CharField(verbose_name=_('reason'), max_length=200)
+
+    class Meta:
+        ordering = ('event', 'original_start')
+        verbose_name = _('occurrence change')
+        verbose_name_plural = _('occurrence changes')
+        constraints = (
+            models.UniqueConstraint(fields=('event', 'original_start'), name='netbox_calendar_occurrence_unique'),
+        )
+
+    def __str__(self):
+        when = timezone.localtime(self.original_start).strftime('%Y-%m-%d %H:%M')
+        return f'{self.event}: {when} {"skipped" if self.is_skipped else "moved"}'
+
+    @property
+    def is_skipped(self):
+        return self.start is None
+
+    @property
+    def is_moved(self):
+        return self.start is not None
+
+    @property
+    def is_active(self):
+        """Whether the event's rule still has the original occurrence."""
+        return recurrence.is_occurrence(self.event, self.original_start)
+
+    def clean(self):
+        super().clean()
+        if not self.event_id:
+            return
+        if not self.event.rrule:
+            raise ValidationError(_('Only occurrences of a repeating event can be skipped or moved.'))
+        if self.original_start and not recurrence.is_occurrence(self.event, self.original_start):
+            raise ValidationError({'original_start': _('The event has no occurrence at this time.')})
+        if (self.start is None) != (self.end is None):
+            raise ValidationError(_('A moved occurrence needs both a start and an end.'))
+        if self.start is not None:
+            if self.event.all_day:
+                self.start, self.end = all_day_bounds(self.start, self.end)
+            if self.end <= self.start:
+                raise ValidationError({'end': _('The end must be after the start.')})
+            if self.start == self.original_start and self.end == self.original_start + self.event.duration:
+                raise ValidationError(_('These are the original times. Bring the occurrence back instead.'))
+        if not (self.reason or '').strip():
+            raise ValidationError({'reason': _('Give a reason.')})
+
+    def get_absolute_url(self):
+        return self.event.get_absolute_url()
+
+    def to_objectchange(self, action):
+        # Listed in the event's change log, with the reason as its message.
+        objectchange = super().to_objectchange(action)
+        objectchange.related_object = self.event
+        if not objectchange.message:
+            objectchange.message = self.reason
         return objectchange
 
 

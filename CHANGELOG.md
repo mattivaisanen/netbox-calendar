@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Edit** on an occurrence replaces **Skip**: skip it, move it to another
+  time, or bring it back. Each needs a reason, shown on the event page,
+  in the event's journal and change log, and in the *Changed* notice
+  (`occurrence` in the Event Rule data; `occurrence` and `reason` in the
+  message template).
+- Calendar feeds and `.ics` files show moved occurrences at their new time
+  (`RECURRENCE-ID`).
+- REST API: `occurrence-changes/` endpoint. **The event's `skipped` field
+  is replaced by `occurrence_changes`**; existing skipped occurrences are
+  kept with the reason "Skipped before reasons were recorded."
 - Objects on an event combine as a rule: different kinds AND together
   (a device role and a location: that role's devices in that location),
   several of one kind OR together. Devices and VMs picked one by one are

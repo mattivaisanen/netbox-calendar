@@ -6,6 +6,10 @@ package: only the parts calendars need.
 Times are written in NetBox's TIME_ZONE with a VTIMEZONE block, so a
 repeating event at 09:00 stays at 09:00 in Outlook across daylight saving
 changes. All-day events are dates.
+
+A skipped occurrence is an EXDATE of its series. A moved one is a VEVENT
+of its own with the series' UID and a RECURRENCE-ID naming the occurrence
+it replaces, as RFC 5545 describes.
 """
 from calendar import monthrange
 from datetime import datetime, timedelta, timezone as dt_timezone
@@ -16,6 +20,7 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.utils import timezone
 
+from . import recurrence
 from .plugin_settings import get_setting
 
 PRODID = '-//netbox-calendar//EN'
@@ -167,36 +172,25 @@ def _sequence(event):
     return max(int((event.last_updated - event.created).total_seconds()), 0) % 2147483647
 
 
-def event_lines(event, objects_text='', attendees=(), organizer=None):
-    """The VEVENT lines of one event (a whole series for a repeating one)."""
-    lines = [
-        'BEGIN:VEVENT',
-        f'UID:{_uid(event)}',
-        f'DTSTAMP:{_utc(timezone.now())}',
-        f'SEQUENCE:{_sequence(event)}',
-    ]
+def _date_or_time_line(event, name, value):
+    """A DTSTART/DTEND/EXDATE/RECURRENCE-ID line: a date for all-day events, else a time."""
     if event.all_day:
-        lines.append(f'DTSTART;VALUE=DATE:{timezone.localtime(event.start).strftime("%Y%m%d")}')
-        lines.append(f'DTEND;VALUE=DATE:{timezone.localtime(event.end).strftime("%Y%m%d")}')
-    else:
-        lines.append(_time_line('DTSTART', event.start))
-        lines.append(_time_line('DTEND', event.end))
-    if event.rrule:
-        lines.append(f'RRULE:{event.rrule}')
-        for skipped in event.skipped or ():
-            if event.all_day:
-                lines.append(f'EXDATE;VALUE=DATE:{timezone.localtime(skipped).strftime("%Y%m%d")}')
-            else:
-                lines.append(_time_line('EXDATE', skipped))
+        return f'{name};VALUE=DATE:{timezone.localtime(value).strftime("%Y%m%d")}'
+    return _time_line(name, value)
+
+
+def _details(event, objects_text, attendees, organizer, note=''):
+    """The lines a series and its moved occurrences share: title, text, status, people."""
     link = absolute_url(event.get_absolute_url())
     description = '\n\n'.join(part for part in (
+        note,
         event.description,
         f'Concerns: {objects_text}' if objects_text else '',
         f'Owner: {event.owner_name}' if event.event_owner_id else '',
         event.comments,
         link,
     ) if part)
-    lines += [
+    lines = [
         f'SUMMARY:{escape(event.title)}',
         f'DESCRIPTION:{escape(description)}',
         f'CATEGORIES:{escape(event.event_type.name)}',
@@ -212,7 +206,46 @@ def event_lines(event, objects_text='', attendees=(), organizer=None):
         lines.append(f'ORGANIZER;CN={param(organizer[0])}:mailto:{organizer[1]}')
     for name, email in attendees:
         lines.append(f'ATTENDEE;CN={param(name)};ROLE=REQ-PARTICIPANT;RSVP=FALSE:mailto:{email}')
+    return lines
+
+
+def event_lines(event, objects_text='', attendees=(), organizer=None):
+    """
+    The VEVENT lines of one event: a whole series for a repeating one,
+    followed by one VEVENT per moved occurrence.
+    """
+    head = [f'UID:{_uid(event)}', f'DTSTAMP:{_utc(timezone.now())}', f'SEQUENCE:{_sequence(event)}']
+    lines = [
+        'BEGIN:VEVENT', *head,
+        _date_or_time_line(event, 'DTSTART', event.start),
+        _date_or_time_line(event, 'DTEND', event.end),
+    ]
+    moved = []
+    if event.rrule:
+        lines.append(f'RRULE:{event.rrule}')
+        for original, change in sorted(recurrence.changes(event).items()):
+            if not recurrence.is_occurrence(event, original):
+                continue  # The rule no longer has this occurrence.
+            if change.is_moved:
+                # Replaced by its own VEVENT below; an EXDATE here would hide that one too.
+                moved.append(change)
+            else:
+                lines.append(_date_or_time_line(event, 'EXDATE', original))
+    lines += _details(event, objects_text, attendees, organizer)
     lines.append('END:VEVENT')
+
+    for change in moved:
+        note = 'Moved from {when}. Reason: {reason}'.format(
+            when=timezone.localtime(change.original_start).strftime('%Y-%m-%d %H:%M'), reason=change.reason,
+        )
+        lines += [
+            'BEGIN:VEVENT', *head,
+            _date_or_time_line(event, 'RECURRENCE-ID', change.original_start),
+            _date_or_time_line(event, 'DTSTART', change.start),
+            _date_or_time_line(event, 'DTEND', change.end),
+            *_details(event, objects_text, attendees, organizer, note),
+            'END:VEVENT',
+        ]
     return lines
 
 

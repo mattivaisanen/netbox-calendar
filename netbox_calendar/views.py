@@ -17,7 +17,7 @@ from netbox.views import generic
 from utilities.htmx import htmx_partial
 from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
-from . import agenda, filtersets, forms, ical, plugin_settings, tables
+from . import agenda, filtersets, forms, ical, plugin_settings, recurrence, tables
 from .lookup import DEVICE_MATCHES, Targets, affected_devices, describe, filtered_objects
 from .models import Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting
 from .permissions import can_edit, editable
@@ -130,7 +130,9 @@ class EventRoleBulkDeleteView(generic.BulkDeleteView):
 # Events
 #
 
-EVENT_QUERYSET = Event.objects.select_related('event_type', 'event_owner').prefetch_related('links', 'tags')
+EVENT_QUERYSET = Event.objects.select_related('event_type', 'event_owner').prefetch_related(
+    'links', 'tags', 'occurrence_changes',
+)
 
 
 @register_model_view(Event, 'list', path='', detail=False)
@@ -225,7 +227,10 @@ class EventView(generic.ObjectView):
             'people': instance.people.select_related('role', 'user', 'group', 'contact'),
             'upcoming': upcoming,
             'next_occurrence': instance.next_occurrence(now),
-            'skipped': sorted(instance.skipped or ()),
+            'occurrence_changes': [
+                (change, recurrence.is_occurrence(instance, change.original_start))
+                for change in instance.occurrence_changes.all()
+            ],
             'reminders_text': forms.describe_minutes(instance.effective_reminders()),
             'reminders_own': instance.reminders is not None,
             'conflicts': conflicts(instance, request.user),
@@ -393,27 +398,51 @@ class EventPersonDeleteView(EventChangeMixin, View):
         return redirect(event.get_absolute_url())
 
 
-class EventSkipView(EventChangeMixin, View):
-    """Skip one occurrence of a repeating event, or bring it back (POST)."""
+class EventOccurrenceView(EventChangeMixin, View):
+    """
+    Skip, move or bring back one occurrence of a repeating event, always
+    with a reason. The occurrence is named by its original start
+    (?occurrence=<ISO time>).
+    """
+    template_name = 'netbox_calendar/event_occurrence.html'
 
-    def post(self, request, pk):
-        event = self.get_event(request, pk)
+    def get_original_start(self, event, data):
         try:
-            moment = datetime.fromisoformat(request.POST.get('occurrence', ''))
+            moment = datetime.fromisoformat(data.get('occurrence', ''))
         except ValueError:
             raise Http404
         if timezone.is_naive(moment):
             moment = timezone.make_aware(moment)
-        skipped = [value for value in (event.skipped or ()) if value != moment]
-        if request.POST.get('restore'):
-            message = _('Brought back the occurrence of {when}.')
-        else:
-            skipped.append(moment)
-            message = _('Skipped the occurrence of {when}.')
-        event.snapshot()
-        event.skipped = sorted(skipped)
-        event.save()
-        messages.success(request, message.format(when=timezone.localtime(moment).strftime('%Y-%m-%d %H:%M')))
+        # A change left behind by an edited rule can still be brought back.
+        if not recurrence.is_occurrence(event, moment) and \
+                not event.occurrence_changes.filter(original_start=moment).exists():
+            raise Http404
+        return moment
+
+    def get(self, request, pk):
+        event = self.get_event(request, pk)
+        original_start = self.get_original_start(event, request.GET)
+        form = forms.OccurrenceForm(event, original_start, initial=request.GET.dict())
+        if htmx_partial(request):
+            # The action picker re-renders the form with the fields that action needs.
+            return render(request, 'htmx/form.html', {'form': form})
+        return render(request, self.template_name, {'object': event, 'form': form, 'original_start': original_start})
+
+    def post(self, request, pk):
+        event = self.get_event(request, pk)
+        original_start = self.get_original_start(event, request.POST)
+        form = forms.OccurrenceForm(event, original_start, data=request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {
+                'object': event, 'form': form, 'original_start': original_start,
+            })
+        action = form.save()
+        message = {
+            form.SKIP: _('Skipped the occurrence of {when}.'),
+            form.MOVE: _('Moved the occurrence of {when}.'),
+            form.RESTORE: _('Brought back the occurrence of {when}.'),
+        }[action]
+        messages.success(request, message.format(when=timezone.localtime(original_start).strftime('%Y-%m-%d %H:%M')))
         return redirect(event.get_absolute_url())
 
 
@@ -580,7 +609,9 @@ class FeedView(View):
         queryset = filtersets.EventFilterSet(request.GET, queryset, request=request).qs
         # Single events from the last 90 days on; repeating series whole.
         since = timezone.now() - timedelta(days=90)
-        queryset = queryset.filter(Q(end__gte=since) | ~Q(rrule='')).select_related('event_type', 'event_owner')
+        queryset = queryset.filter(Q(end__gte=since) | ~Q(rrule='')).select_related(
+            'event_type', 'event_owner',
+        ).prefetch_related('occurrence_changes')
         text = ical.calendar(queryset, name=_('NetBox events'), describe=_describe, refresh='PT1H')
         response = HttpResponse(text, content_type='text/calendar; charset=utf-8')
         # Shown inline, never cached by proxies: the feed is personal.

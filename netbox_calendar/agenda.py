@@ -71,7 +71,9 @@ class Day:
 def event_entries(queryset, after, before):
     """Entries for every occurrence of the events in `queryset` that overlaps [after, before)."""
 
-    events = queryset.filter(Q(start__lt=before), Q(end__gt=after) | ~Q(rrule='')).select_related('event_type')
+    events = queryset.filter(Q(start__lt=before), Q(end__gt=after) | ~Q(rrule='')).select_related(
+        'event_type',
+    ).prefetch_related('occurrence_changes')
     found = []
     for event in events:
         event_type = event.event_type

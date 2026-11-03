@@ -40,7 +40,8 @@ Outlook or any other calendar app.
   download per event.
 - Change freeze windows, shown in the top bar to everyone while they run.
 - A warning when another event overlaps on the same object.
-- Skip single occurrences of a repeating event.
+- Skip or move single occurrences of a repeating event, always with a
+  reason that shows on the event, in its journal and in notifications.
 - Scheduled change requests from netbox-change-approval on the calendar, if
   that plugin is installed. It is not required.
 - REST API for everything, and settings superusers change in NetBox.

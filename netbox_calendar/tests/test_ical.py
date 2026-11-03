@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from django.test import TestCase, override_settings
 
 from .. import ical
-from ..models import Event, EventType
+from ..models import Event, EventType, OccurrenceChange
 
 ZONE = ZoneInfo('Europe/Helsinki')
 
@@ -20,8 +20,9 @@ class ICalTests(TestCase):
         self.event = Event.objects.create(
             title='Core switch upgrade, stage 1', event_type=EventType.objects.get(slug='upgrade'),
             start=start, end=start + timedelta(hours=2), rrule='FREQ=WEEKLY;COUNT=4',
-            skipped=[start + timedelta(days=7)], description='Line one\nLine two',
+            description='Line one\nLine two',
         )
+        OccurrenceChange.objects.create(event=self.event, original_start=start + timedelta(days=7), reason='Holiday')
 
     def test_escape_and_fold(self):
         self.assertEqual(ical.escape('a,b;c\\d\ne'), 'a\\,b\\;c\\\\d\\ne')
@@ -47,6 +48,24 @@ class ICalTests(TestCase):
         ):
             self.assertIn(expected, lines)
         self.assertTrue(any(line.startswith('DESCRIPTION:Line one\\nLine two') for line in lines))
+
+    def test_moved_occurrence_has_its_own_vevent(self):
+        original = self.event.start + timedelta(days=14)
+        OccurrenceChange.objects.create(
+            event=self.event, original_start=original, start=original + timedelta(days=1),
+            end=original + timedelta(days=1, hours=3), reason='Spare parts late',
+        )
+        lines = unfold(ical.calendar([self.event])).split('\r\n')
+        self.assertEqual(lines.count('BEGIN:VEVENT'), 2)
+        # Only the skipped one is excluded; the moved one is replaced.
+        self.assertEqual([line for line in lines if line.startswith('EXDATE')],
+                         ['EXDATE;TZID=Europe/Helsinki:20260414T090000'])
+        override = lines[lines.index('RECURRENCE-ID;TZID=Europe/Helsinki:20260421T090000'):]
+        self.assertIn('DTSTART;TZID=Europe/Helsinki:20260422T090000', override)
+        self.assertIn('DTEND;TZID=Europe/Helsinki:20260422T120000', override)
+        self.assertTrue(any('Reason: Spare parts late' in line for line in override))
+        uids = {line for line in lines if line.startswith('UID:')}
+        self.assertEqual(len(uids), 1)
 
     def test_all_day_event_is_dates(self):
         self.event.all_day = True

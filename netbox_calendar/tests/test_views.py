@@ -4,8 +4,11 @@ from django.test import RequestFactory, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from core.models import ObjectChange
+from extras.models import JournalEntry
+
 from .. import plugin_settings
-from ..models import Event, EventPerson, EventRole, EventType, FeedToken
+from ..models import Event, EventPerson, EventRole, EventType, FeedToken, OccurrenceChange
 from ..widgets import UpcomingEventsWidget
 from .utils import grant, make_device, make_event, make_user
 
@@ -115,15 +118,52 @@ class PageTests(TestCase):
         form = self.client.get(url('event_edit', self.event.pk)).context['form']
         self.assertEqual(form.initial['reminder_source'], 'own')
 
-    def test_skip_and_restore_an_occurrence(self):
+    def test_skip_move_and_restore_an_occurrence(self):
         occurrence = self.event.next_occurrence()
+        page = url('event_occurrence', self.event.pk)
         value = occurrence.start.isoformat()
-        self.client.post(url('event_skip', self.event.pk), {'occurrence': value})
-        self.event.refresh_from_db()
-        self.assertEqual(self.event.skipped, [occurrence.start])
-        self.client.post(url('event_skip', self.event.pk), {'occurrence': value, 'restore': 'true'})
-        self.event.refresh_from_db()
-        self.assertEqual(self.event.skipped, [])
+        self.assertEqual(self.client.get(page, {'occurrence': value}).status_code, 200)
+        # Not an occurrence of the series.
+        self.assertEqual(self.client.get(page, {'occurrence': (occurrence.start + timedelta(hours=1)).isoformat()})
+                         .status_code, 404)
+
+        # A reason is always needed.
+        response = self.client.post(page, {'occurrence': value, 'action': 'skip', 'reason': ''})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(OccurrenceChange.objects.exists())
+
+        self.client.post(page, {'occurrence': value, 'action': 'skip', 'reason': 'Holiday'})
+        change = OccurrenceChange.objects.get()
+        self.assertTrue(change.is_skipped)
+        self.assertEqual(change.reason, 'Holiday')
+        self.assertNotEqual(self.event.next_occurrence().start, occurrence.start)
+
+        # Moving it instead: the same change, with new times.
+        new_start = timezone.localtime(occurrence.start + timedelta(days=1))
+        self.client.post(page, {
+            'occurrence': value, 'action': 'move', 'reason': 'Vendor late',
+            'start': new_start.strftime('%Y-%m-%d %H:%M:%S'),
+            'end': (new_start + timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S'),
+        })
+        change = OccurrenceChange.objects.get()
+        self.assertEqual((change.start, change.reason), (new_start, 'Vendor late'))
+        self.assertEqual(self.event.next_occurrence().start, new_start)
+        self.assertContains(self.client.get(url('event', self.event.pk)), 'Vendor late')
+
+        self.client.post(page, {'occurrence': value, 'action': 'restore', 'reason': 'Back on'})
+        self.assertFalse(OccurrenceChange.objects.exists())
+        self.assertEqual(self.event.next_occurrence().start, occurrence.start)
+
+        # Each step is in the event's journal with its reason, and in its change log.
+        journal = list(JournalEntry.objects.filter(assigned_object_id=self.event.pk).values_list('comments', flat=True))
+        self.assertEqual(len(journal), 3)
+        self.assertTrue(all('Reason: ' in text for text in journal))
+        self.assertTrue(any(text.endswith('Back on') for text in journal))
+        self.assertEqual(
+            set(ObjectChange.objects.filter(related_object_id=self.event.pk).exclude(message='')
+                .values_list('message', flat=True)),
+            {'Holiday', 'Vendor late', 'Back on'},
+        )
 
 
 class EditRuleTests(TestCase):

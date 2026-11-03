@@ -8,5 +8,6 @@ router.register('event-roles', views.EventRoleViewSet)
 router.register('events', views.EventViewSet)
 router.register('event-objects', views.EventObjectViewSet)
 router.register('event-people', views.EventPersonViewSet)
+router.register('occurrence-changes', views.OccurrenceChangeViewSet)
 
 urlpatterns = router.urls

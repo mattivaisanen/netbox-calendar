@@ -5,7 +5,9 @@ other webhook, and optionally a direct e-mail with a calendar invite.
 
 What is sent about is set per event type (EventType.notify_on): an event
 scheduled, changed or cancelled (signals.py, after the database commit),
-and reminders, starts and ends (jobs.py, the background job).
+and reminders, starts and ends (jobs.py, the background job). Skipping,
+moving or bringing back one occurrence is a change; the notice names the
+occurrence and the reason.
 
 Who hears is also set per event type: the owner, people on the event whose
 role is notified, a NetBox group, users subscribed to an object the event
@@ -14,7 +16,7 @@ included links and the affected devices; excluded ones are left out. Whoever mad
 is not told about their own change.
 """
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
@@ -167,10 +169,53 @@ def when_text(event, start, end):
     return f'{formats.date_format(start, "DATETIME_FORMAT")} - {formats.date_format(end, "DATETIME_FORMAT")}'
 
 
-def event_data(event, kind, users, contacts, start, end, actor=None, offset=None):
+#: What can happen to one occurrence (occurrence_info()).
+SKIPPED, MOVED, RESTORED = 'skipped', 'moved', 'restored'
+
+
+def _moment_text(event, value):
+    value = timezone.localtime(value)
+    return formats.date_format(value, 'DATE_FORMAT' if event.all_day else 'DATETIME_FORMAT')
+
+
+def occurrence_info(change, action, reason=None):
+    """
+    What happened to one occurrence, as notice data: `action` is SKIPPED,
+    MOVED or RESTORED; `reason` defaults to the change's own reason.
+    """
+    event = change.event
+    original = _moment_text(event, change.original_start)
+    if action == MOVED:
+        text = _('Occurrence of {original} moved to {when}').format(
+            original=original, when=when_text(event, change.start, change.end),
+        )
+    elif action == RESTORED:
+        text = _('Occurrence of {original} brought back').format(original=original)
+    else:
+        text = _('Occurrence of {original} skipped').format(original=original)
+    return {
+        'action': action,
+        'original_start': change.original_start.isoformat(),
+        'start': change.start.isoformat() if action == MOVED else None,
+        'end': change.end.isoformat() if action == MOVED else None,
+        'reason': change.reason if reason is None else reason,
+        'text': str(text),
+    }
+
+
+def occurrence_times(event, info):
+    """(start, end) a notice about one occurrence is about: the new times of a moved one."""
+    if info['action'] == MOVED:
+        return datetime.fromisoformat(info['start']), datetime.fromisoformat(info['end'])
+    start = datetime.fromisoformat(info['original_start'])
+    return start, start + event.duration
+
+
+def event_data(event, kind, users, contacts, start, end, actor=None, offset=None, occurrence=None):
     """
     Everything a message about the notice needs, for Event Rules
     (conditions) and webhook body templates ({{ data.<key> }}).
+    `occurrence` is occurrence_info() for a notice about one occurrence.
     """
     targets = Targets(event)
     objects = _linked_objects(event)
@@ -192,6 +237,8 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
         'by': (person(actor) or {}).get('name', ''),
         'link': link,
         'comment': event.description,
+        'occurrence': occurrence['text'] if occurrence else '',
+        'reason': occurrence['reason'] if occurrence else '',
     }
     emails = [user.email for user in users if user.email] + [email for _name, email in contacts]
     return {
@@ -209,6 +256,8 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
         'all_day': event.all_day,
         'recurrence': event.recurrence_text(),
         'reminder_minutes': offset,
+        # A skipped, moved or brought back occurrence, with the reason; None otherwise.
+        'occurrence': occurrence,
         'link': link,
         'url': event.get_absolute_url(),
         # What the event concerns: in words, the included objects, the excluded ones and the affected devices.
@@ -228,18 +277,21 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
     }
 
 
-def notify(event, kind, start=None, end=None, actor=None, offset=None):
+def notify(event, kind, start=None, end=None, actor=None, offset=None, occurrence=None):
     """
     Send notice `kind` (a NoticeChoices value) about `event`, or about one
     occurrence of it (`start`, `end`), if its event type asks for it.
-    Returns the number of people told.
+    `occurrence` is occurrence_info() when one occurrence was skipped,
+    moved or brought back. Returns the number of people told.
     """
     if kind not in (event.event_type.notify_on or ()):
         return 0
+    if occurrence and start is None:
+        start, end = occurrence_times(event, occurrence)
     start = start or event.start
     end = end or event.end
     users, contacts = recipients(event, actor)
-    data = event_data(event, kind, users, contacts, start, end, actor, offset)
+    data = event_data(event, kind, users, contacts, start, end, actor, offset, occurrence)
     if users and on('notifications'):
         _bell(event, kind, users)
     # Event Rules run even when nobody is told directly, such as for a
