@@ -22,45 +22,19 @@ from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.mail import EmailMultiAlternatives
 from django.utils import formats, timezone
-from django.utils.translation import gettext_lazy as _
 
 from core.models import ObjectType
 from extras.events import EventContext, flush_events
 from extras.models import Notification, Subscription
-from netbox.events import EventType
-from netbox.registry import registry
 from tenancy.models import ContactAssignment
 
 from . import ical, message_template
-from .choices import NoticeChoices
+from .event_types import EVENT_TYPES
 from .lookup import Targets, affected_devices, describe, linked_objects
 from .models import EventObject, display_name
 from .plugin_settings import get_setting, on
 
 logger = logging.getLogger('netbox_calendar.notifications')
-
-#: NetBox event type names, one per notice.
-EVENT_TYPES = {
-    NoticeChoices.SCHEDULED: ('netbox_calendar.scheduled', _('Event scheduled'), 'info'),
-    NoticeChoices.CHANGED: ('netbox_calendar.changed', _('Event changed'), 'warning'),
-    NoticeChoices.CANCELLED: ('netbox_calendar.cancelled', _('Event cancelled'), 'danger'),
-    NoticeChoices.REMINDER: ('netbox_calendar.reminder', _('Event reminder'), 'info'),
-    NoticeChoices.STARTED: ('netbox_calendar.started', _('Event started'), 'warning'),
-    NoticeChoices.ENDED: ('netbox_calendar.ended', _('Event ended'), 'success'),
-}
-
-
-def register_event_types():
-    class TranslatedEventType(EventType):
-        # NetBox prints an event with str(event); a lazy translation must be
-        # made plain text first, or the notification menu fails to load.
-        def __str__(self):
-            return str(self.text)
-
-    for name, text, kind in EVENT_TYPES.values():
-        if name not in registry['event_types']:
-            TranslatedEventType(name, text, kind=kind).register()
-
 
 def person(user):
     """A user as webhook data."""
@@ -241,11 +215,16 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
         'reason': occurrence['reason'] if occurrence else '',
     }
     emails = [user.email for user in users if user.email] + [email for _name, email in contacts]
+    # One short line on top of the title, like netbox-change-approval's
+    # `detail`, so one body template can serve both plugins.
+    detail = f"{context['when']}, by {context['by']}" if context['by'] else context['when']
     return {
         'message': message_template.render(get_setting('message'), context),
         'notice': kind,
         'event': notice,
         'id': event.pk,
+        'display': str(event),
+        'detail': detail,
         'title': event.title,
         'event_type': event.event_type.name,
         'status': event.status,

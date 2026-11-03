@@ -5,7 +5,7 @@ touch. See README.md and docs/.
 """
 from netbox.plugins import PluginConfig
 
-from . import message_template
+from . import event_types, message_template
 
 
 class NetBoxCalendarConfig(PluginConfig):
@@ -68,10 +68,11 @@ class NetBoxCalendarConfig(PluginConfig):
     def ready(self):
         super().ready()
 
-        from . import notifications, signals, widgets  # noqa: F401 (connects receivers, registers the widget)
+        from . import signals, widgets  # noqa: F401 (connects receivers, registers the widget)
         from . import jobs  # noqa: F401 (registers the reminder job)
 
-        notifications.register_event_types()
 
+# Before ready(): see event_types.py.
+event_types.register()
 
 config = NetBoxCalendarConfig
