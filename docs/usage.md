@@ -197,6 +197,19 @@ Others can view the event but see no Edit or Delete button, and the API
 refuses their changes. Turn *Restrict editing* off to use NetBox
 permissions only.
 
+## Journal
+
+The **Journal** card on the event page lists the five newest journal
+entries and has a form to add one. Use it for notes that build up over
+time: what was agreed, what went wrong, what to check next time. Adding an
+entry needs NetBox's *add journal entry* permission, not edit rights on the
+event. The **Journal** tab lists every entry and is where entries are
+edited or deleted.
+
+The event's **Comments** field is a fixed description, set in the edit
+form and sent as the event text in calendar feeds. Its panel shows only
+when it has text.
+
 ## Change freezes
 
 An event type with **Change freeze** marks a period when no changes should
