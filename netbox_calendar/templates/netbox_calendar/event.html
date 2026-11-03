@@ -2,6 +2,7 @@
 {% load helpers %}
 {% load plugins %}
 {% load i18n %}
+{% load form_helpers %}
 
 {% block extra_controls %}
   <a href="{% url 'plugins:netbox_calendar:event_ics' pk=object.pk %}" class="btn btn-outline-primary"
@@ -250,7 +251,51 @@
       </table>
     </div>
     {% include 'inc/panels/custom_fields.html' %}
-    {% include 'inc/panels/comments.html' %}
+    {# Comments are set in the edit form; the panel shows only when there are some. #}
+    {% if object.comments %}{% include 'inc/panels/comments.html' %}{% endif %}
+    {% if journal is not None or journal_form %}
+      {# The newest journal entries, and a form to add one without leaving the event. #}
+      <div class="card">
+        <h2 class="card-header d-flex justify-content-between align-items-center">
+          <span>{% trans "Journal" %}{% if journal_total %} <span class="badge text-bg-secondary">{{ journal_total }}</span>{% endif %}</span>
+          {% if journal is not None and journal_total > journal|length %}
+            <a href="{% url 'plugins:netbox_calendar:event_journal' pk=object.pk %}" class="btn btn-sm btn-outline-secondary">
+              {% trans "View All" %}
+            </a>
+          {% endif %}
+        </h2>
+        {% if journal is not None %}
+          <table class="table table-hover">
+            {% for entry in journal %}
+              <tr>
+                <td>
+                  <div class="small text-secondary mb-1">
+                    {% badge entry.get_kind_display bg_color=entry.get_kind_color %}
+                    <a href="{{ entry.get_absolute_url }}">{{ entry.created|date:"SHORT_DATETIME_FORMAT" }}</a>
+                    {% if entry.created_by %}&middot; {{ entry.created_by }}{% endif %}
+                  </div>
+                  {{ entry.comments|markdown }}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td class="text-secondary">{% trans "No entries yet." %}</td></tr>
+            {% endfor %}
+          </table>
+        {% endif %}
+        {% if journal_form %}
+          <div class="card-body">
+            <form action="{% url 'plugins:netbox_calendar:event_journal_add' pk=object.pk %}" method="post">
+              {% csrf_token %}
+              {% render_field journal_form.kind %}
+              {% render_field journal_form.comments %}
+              <div class="text-end">
+                <button type="submit" class="btn btn-primary">{% trans "Add Entry" %}</button>
+              </div>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
     {% plugin_right_page object %}
   </div>
 </div>

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The event page shows the event's journal where the empty Comments panel
+  was: the five newest entries and a form to add one without leaving the
+  page. The Journal tab still lists them all. Comments (set in the edit
+  form) show only when there are some.
 - Fixed: skipping, moving or bringing back an occurrence failed with
   `NameError: name '_' is not defined`.
 - **Edit** on an occurrence replaces **Skip**: skip it, move it to another

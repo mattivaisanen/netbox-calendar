@@ -165,6 +165,20 @@ class PageTests(TestCase):
             {'Holiday', 'Vendor late', 'Back on'},
         )
 
+    def test_journal_on_the_event_page(self):
+        page = url('event', self.event.pk)
+        self.assertContains(self.client.get(page), 'Add Entry')
+        response = self.client.post(url('event_journal_add', self.event.pk), {'kind': 'info', 'comments': 'Vendor confirmed'})
+        # Back on the event, not the Journal tab, with the new entry listed.
+        self.assertRedirects(response, page)
+        entry = JournalEntry.objects.get()
+        self.assertEqual((entry.assigned_object, entry.created_by), (self.event, self.admin))
+        self.assertContains(self.client.get(page), 'Vendor confirmed')
+
+        # Text is required; nothing is saved without it.
+        self.client.post(url('event_journal_add', self.event.pk), {'kind': 'info', 'comments': ''})
+        self.assertEqual(JournalEntry.objects.count(), 1)
+
 
 class EditRuleTests(TestCase):
     def setUp(self):

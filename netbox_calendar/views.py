@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
@@ -13,6 +14,8 @@ from django.utils.translation import gettext as _
 from django.views.generic import View
 
 from dcim.models import Device
+from extras.forms import JournalEntryForm
+from extras.models import JournalEntry
 from netbox.views import generic
 from utilities.htmx import htmx_partial
 from utilities.views import ConditionalLoginRequiredMixin, register_model_view
@@ -206,6 +209,9 @@ def target_groups(event):
 #: How many affected devices the event page lists.
 DEVICES_SHOWN = 100
 
+#: How many of the newest journal entries the event page lists; the Journal tab has them all.
+JOURNAL_SHOWN = 5
+
 
 @register_model_view(Event)
 class EventView(generic.ObjectView):
@@ -236,7 +242,23 @@ class EventView(generic.ObjectView):
             'conflicts': conflicts(instance, request.user),
             'can_edit': can_edit(request.user, instance),
             'last_day': instance.last_day,
+            **journal_context(request, instance),
         }
+
+
+def journal_context(request, event):
+    """The event's newest journal entries, and a form to add one, as the user may see and add them."""
+    context = {}
+    if request.user.has_perm('extras.view_journalentry'):
+        entries = JournalEntry.objects.restrict(request.user, 'view').filter(
+            assigned_object_type=ContentType.objects.get_for_model(Event),
+            assigned_object_id=event.pk,
+        )
+        context['journal'] = entries.select_related('created_by').order_by('-created')[:JOURNAL_SHOWN]
+        context['journal_total'] = entries.count()
+    if request.user.has_perm('extras.add_journalentry'):
+        context['journal_form'] = JournalEntryForm()
+    return context
 
 
 @register_model_view(Event, 'add', detail=False)
@@ -443,6 +465,44 @@ class EventOccurrenceView(EventChangeMixin, View):
             form.RESTORE: _('Brought back the occurrence of {when}.'),
         }[action]
         messages.success(request, message.format(when=timezone.localtime(original_start).strftime('%Y-%m-%d %H:%M')))
+        return redirect(event.get_absolute_url())
+
+
+class EventJournalView(ConditionalLoginRequiredMixin, View):
+    """
+    Add a journal entry from the event page and come back to it.
+
+    NetBox's own add view always returns to the Journal tab, so the event page
+    posts here instead. The rule is NetBox's: anyone who may view the event and
+    add journal entries, not only those who may edit the event.
+    """
+
+    def post(self, request, pk):
+        event = get_object_or_404(Event.objects.restrict(request.user, 'view'), pk=pk)
+        if not request.user.has_perm('extras.add_journalentry'):
+            raise PermissionDenied(_('You may not add journal entries.'))
+
+        # The entry always belongs to this event, whatever the browser sends.
+        data = request.POST.copy()
+        data['assigned_object_type'] = ContentType.objects.get_for_model(Event).pk
+        data['assigned_object_id'] = event.pk
+        form = JournalEntryForm(data)
+        if not form.is_valid():
+            for field, errors in form.errors.items():
+                label = form.fields[field].label if field in form.fields else ''
+                messages.error(request, f"{label}: {' '.join(errors)}" if label else ' '.join(errors))
+            return redirect(event.get_absolute_url())
+
+        with transaction.atomic():
+            entry = form.save(commit=False)
+            entry.created_by = request.user
+            entry.save()
+            form.save_m2m()
+            # As in NetBox's edit views: undo the save if a permission constraint does not allow it.
+            if not JournalEntry.objects.restrict(request.user, 'add').filter(pk=entry.pk).exists():
+                raise PermissionDenied(_('You may not add this journal entry.'))
+
+        messages.success(request, _('Added a journal entry.'))
         return redirect(event.get_absolute_url())
 
 
