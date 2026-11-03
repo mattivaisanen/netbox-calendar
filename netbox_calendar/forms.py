@@ -96,6 +96,27 @@ class NextTimesWidget(forms.Widget):
         return None
 
 
+class LengthInput(forms.TextInput):
+    """
+    The length box, with the end it gives (start + length) beside it in a
+    muted, read-only box. Refreshed (HTMX) whenever a field of the When
+    section changes; set `end_text` before rendering.
+    """
+    template_name = 'netbox_calendar/widgets/length_input.html'
+    end_text = ''
+
+    def get_context(self, name, value, attrs):
+        context = super().get_context(name, value, attrs)
+        context['widget']['end_text'] = self.end_text
+        return context
+
+
+def when_text(value, all_day=False):
+    """A start or end in NetBox's short date (and time) format, with the weekday: "Tue 10.11.2026 10:00"."""
+    value = timezone.localtime(value)
+    return f"{date_format(value, 'D')} {date_format(value, 'SHORT_DATE_FORMAT' if all_day else 'SHORT_DATETIME_FORMAT')}"
+
+
 class UserLabelMixin:
     """
     Label picked users with their full name, the way NetBox's own user
@@ -588,7 +609,7 @@ INTERVAL_HELP = {
 
 #: Values of EventForm's hidden tab fields: which tab of "When" and "Repeat" is open.
 LENGTH, END = 'length', 'end'
-UNTIL, COUNT = 'until', 'count'
+NEVER, UNTIL, COUNT = 'never', 'until', 'count'
 
 
 class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
@@ -604,11 +625,10 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         help_text=_('Empty on a new event: you.'),
     )
     start = forms.DateTimeField(label=_('Start'), widget=CalendarDateTimePicker())
-    # The end is given either as a length or as an end time, on two tabs.
+    # The end is given either as a length or as an end time (End by); all-day events give the last day.
     length = forms.CharField(
-        label=_('Length'), required=False,
-        help_text=_("Such as 30m, 2h or 1d 4h. Empty: the type's default duration. All-day events: in days, such as "
-                    "2d."),
+        label=_('Length'), required=False, widget=LengthInput(),
+        help_text=_("Such as 30m, 2h or 1d 4h. Empty: the type's default duration."),
     )
     end = forms.DateTimeField(
         label=_('End'), required=False, widget=CalendarDateTimePicker(),
@@ -641,15 +661,15 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
     )
     repeat_until = forms.DateField(
         required=False, label=_('Until'), widget=CalendarDatePicker(),
-        help_text=_('Repeats up to and including this day. Empty: no end.'),
+        help_text=_('Repeats up to and including this day.'),
     )
     repeat_count = forms.IntegerField(
-        min_value=1, required=False, label=_('Times'), help_text=_('How many times in all. Empty: no end.'),
+        min_value=1, required=False, label=_('Times'), help_text=_('How many times in all.'),
     )
-    # Repeating stops on a date or after a number of times, on two tabs.
+    # Repeating goes on, or stops on a day or after a number of times.
     repeat_end_by = forms.ChoiceField(
-        choices=((UNTIL, _('Until a day')), (COUNT, _('Number of times'))), required=False, label=_('Ends'),
-        widget=ToggleButtons(),
+        choices=((NEVER, _('No end')), (UNTIL, _('Until a day')), (COUNT, _('Number of times'))), required=False,
+        label=_('Ends'), widget=ToggleButtons(),
     )
     repeat_next = forms.CharField(required=False, label=_('Next'), widget=NextTimesWidget())
     reminder_source = forms.ChoiceField(
@@ -746,15 +766,24 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         if not self.is_bound:
             self.initial.setdefault('end_by', LENGTH)
 
-        # All day: the start and end are picked as dates.
         if self.all_day_value():
+            # All day: dates, no End by; the end is the last day (empty: the start day only).
             for name in ('start', 'end'):
                 self.fields[name].widget = CalendarDatePicker()
                 value = self.initial.get(name)
                 if isinstance(value, str) and len(value) > 10:
                     self.initial[name] = value[:10]
-        # Only the field End by uses: a length or an end date.
-        self.fields.pop('end' if self.end_by_value() == LENGTH else 'length')
+            self.fields['end'].label = _('Last day')
+            self.fields['end'].help_text = _('For events over several days. Empty: the start day only.')
+            self.fields.pop('end_by')
+            self.fields.pop('length')
+        else:
+            # Only the field End by uses: a length (with the end it gives beside it) or an end date.
+            if self.end_by_value() == LENGTH:
+                self.fields.pop('end')
+                self.fields['length'].widget.end_text = self.length_end_text()
+            else:
+                self.fields.pop('length')
 
         # Reminders: from the event type, picked for this event, or none.
         reminders = instance.reminders
@@ -779,11 +808,16 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         }.get(repeat, ('rrule',) if repeat == recurrence.WEEKLY else ('rrule', 'repeat_weekdays'))
         for name in unused:
             self.fields.pop(name, None)
-        # Ends: until a day or after a number of times; only the field in use.
+        # Ends: no end, until a day or after a number of times; only the field in use.
         if 'repeat_until' in self.fields:
             if not self.is_bound and 'repeat_end_by' not in self.initial:
-                self.initial['repeat_end_by'] = COUNT if self.initial.get('repeat_count') else UNTIL
-            self.fields.pop('repeat_count' if get_field_value(self, 'repeat_end_by') != COUNT else 'repeat_until')
+                self.initial['repeat_end_by'] = (
+                    COUNT if self.initial.get('repeat_count') else UNTIL if self.initial.get('repeat_until') else NEVER
+                )
+            ends = self.repeat_end_value()
+            for name, used_by in (('repeat_until', UNTIL), ('repeat_count', COUNT)):
+                if ends != used_by:
+                    self.fields.pop(name)
         else:
             self.fields.pop('repeat_end_by')
         if repeat == recurrence.NONE:
@@ -830,12 +864,37 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
             return self.data.get('end_by') or (LENGTH if self.data.get('length') else END)
         return get_field_value(self, 'end_by') or LENGTH
 
+    def repeat_end_value(self):
+        """How the repeat ends: NEVER, UNTIL or COUNT. Without a choice (API-like posts), the value given."""
+        if self.is_bound:
+            data = self.data
+            return data.get('repeat_end_by') or (
+                COUNT if data.get('repeat_count') else UNTIL if data.get('repeat_until') else NEVER
+            )
+        return get_field_value(self, 'repeat_end_by') or NEVER
+
     def all_day_value(self):
-        value = get_field_value(self, 'all_day')
+        value = self.data.get('all_day') if self.is_bound else get_field_value(self, 'all_day')
         return value is True or str(value).lower() in ('on', 'true', '1')
 
+    def length_end_text(self):
+        """The end the typed length gives, as in "ends Tue 10.11.2026 12:00"; empty when it can't be worked out."""
+        start = self.start_value()
+        if start is None:
+            return ''
+        try:
+            minutes = parse_length(get_field_value(self, 'length'))
+        except ValidationError:
+            return ''
+        if minutes is None:
+            try:
+                minutes = EventType.objects.get(pk=get_field_value(self, 'event_type')).default_duration
+            except (EventType.DoesNotExist, ValueError, TypeError):
+                return ''
+        return _('ends {when}').format(when=when_text(start + timedelta(minutes=minutes)))
+
     def next_times_text(self, repeat, count=3):
-        """The next `count` times of the repeat as typed, in words ("Tue 2026-11-10 10:00, ...")."""
+        """The next `count` times of the repeat as typed ("Tue 10.11.2026 10:00, ..."); never more, so no end is fine."""
         start = self.start_value()
         if start is None:
             return _('Set the start to see the next times.')
@@ -852,11 +911,7 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
                 return None
 
         until, times = value('repeat_until'), value('repeat_count')
-        repeat_end_by = get_field_value(self, 'repeat_end_by') if 'repeat_end_by' in self.fields else None
-        if repeat_end_by == UNTIL:
-            times = None
-        elif repeat_end_by == COUNT:
-            until = None
+        # Only the field in use is in the form, so the other one is None already.
         if repeat == recurrence.CUSTOM:
             try:
                 rule = recurrence.normalize(get_field_value(self, 'rrule') or '', start)
@@ -873,8 +928,7 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         found = recurrence.occurrences(event, now, now + timedelta(days=3660), limit=count)
         if not found:
             return _('No more times: the repeat has ended.')
-        style = 'D Y-m-d' if all_day else 'D Y-m-d H:i'
-        return ', '.join(date_format(timezone.localtime(occurrence.start), style) for occurrence in found)
+        return ', '.join(when_text(occurrence.start, all_day) for occurrence in found)
 
     def start_value(self):
         """The start as typed or given, as a local time; None when missing or not a time."""
@@ -893,17 +947,12 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         start, end, all_day = data.get('start'), data.get('end'), data.get('all_day')
         event_type = data.get('event_type')
         length = data.get('length')
-        # The open tab decides; without one (no JavaScript, API-like posts) a length wins over an end.
-        end_by = data.get('end_by') or (LENGTH if length else END)
+        # End by decides; without it (API-like posts) a length wins over an end. All day: the last day.
+        end_by = END if all_day else data.get('end_by') or (LENGTH if length else END)
         if end_by == LENGTH:
             end = None
             if start and length:
-                if all_day:
-                    # Whole days from the first day: 1d is the first day only.
-                    days = -(-length // 1440)
-                    end = start + timedelta(days=days - 1)
-                else:
-                    end = start + timedelta(minutes=length)
+                end = start + timedelta(minutes=length)
         if start and not end:
             end = start + timedelta(minutes=event_type.default_duration if event_type else 60)
             if all_day:
@@ -926,10 +975,12 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
             if not data.get('rrule'):
                 self.add_error('rrule', _('Type the rule, or pick another kind of repeat.'))
         elif start:
-            # Only the open tab's end counts; without one, both given is an error.
+            # Only the end Ends picks counts; without a pick, both given is an error.
             until, count = data.get('repeat_until'), data.get('repeat_count')
             repeat_end_by = data.get('repeat_end_by')
-            if repeat_end_by == UNTIL:
+            if repeat_end_by == NEVER:
+                until = count = None
+            elif repeat_end_by == UNTIL:
                 count = None
             elif repeat_end_by == COUNT:
                 until = None

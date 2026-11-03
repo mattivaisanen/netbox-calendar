@@ -1,0 +1,8 @@
+{# The length box with the end it gives beside it, read-only; redrawn by HTMX when the When section changes. #}
+<div class="input-group">
+  {% include "django/forms/widgets/text.html" %}
+  <span id="length_end" class="input-group-text text-body-secondary{% if not widget.end_text %} d-none{% endif %}"
+        title="{{ widget.end_text }}"
+        hx-get="." hx-include="#form_fields" hx-select="#length_end" hx-target="#length_end" hx-swap="outerHTML"
+        hx-trigger="change from:#when_fields delay:300ms">{{ widget.end_text }}</span>
+</div>

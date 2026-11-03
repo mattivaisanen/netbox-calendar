@@ -5,14 +5,18 @@
 - Event form: after the start, give the end as a **Length** (such as
   `1h 30m`) or an **End date**, picked with the **End by** buttons. Repeat
   is part of the same **When** section and follows the start: weekly must
-  include the start's weekday, and the repeat **Ends** either **Until a
-  day** (not before the start) or after a **Number of times**.
+  include the start's weekday, and the repeat **Ends**: **No end** (the
+  default), **Until a day** (not before the start) or after a **Number of
+  times**.
 - Fixed: date pickers started the week on Sunday whatever the **First day
   of the week** setting. They now follow it, and shade weekends.
-- **All day** sits under the start. Ticking it switches the start and end to
-  dates without times.
+- **All day** sits under the start. Ticking it switches the start to a
+  date and hides End by; an optional **Last day** makes it run over several
+  days.
+- Beside **Length**, a read-only box shows the end it gives, such as
+  *ends Tue 10.11.2026 12:00*.
 - A repeating event lists its **Next** three times under the repeat fields,
-  updated as the form is filled in.
+  in NetBox's date format, updated as the form is filled in.
 - The event page shows the event's journal where the empty Comments panel
   was: the five newest entries and a form to add one without leaving the
   page. The Journal tab still lists them all. Comments (set in the edit

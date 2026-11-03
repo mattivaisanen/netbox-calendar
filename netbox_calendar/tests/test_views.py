@@ -8,6 +8,7 @@ from core.models import ObjectChange
 from extras.models import JournalEntry
 
 from .. import plugin_settings
+from ..forms import when_text
 from ..models import Event, EventPerson, EventRole, EventType, FeedToken, OccurrenceChange
 from ..widgets import UpcomingEventsWidget
 from .utils import grant, make_device, make_event, make_user
@@ -109,7 +110,7 @@ class PageTests(TestCase):
         # The date pickers start the week on the configured day (flatpickr: 1 = Monday).
         self.assertContains(self.client.get(url('event_add')), 'data-first-weekday="1"')
 
-    def test_when_section_tabs_all_day_and_next_times(self):
+    def test_when_section_end_by_ends_all_day_and_next_times(self):
         # End by: only the field in use is shown, Length to begin with.
         page = self.client.get(url('event_add'))
         self.assertIn('length', page.context['form'].fields)
@@ -119,25 +120,46 @@ class PageTests(TestCase):
         self.assertNotIn('length', page.context['form'].fields)
         self.assertIn('end', page.context['form'].fields)
 
-        # A repeat lists its next times, as the form is filled in.
+        # A repeat lists its next times (in NetBox's date format), as the form is filled in.
         start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
         query = {'start': start.strftime('%Y-%m-%d %H:%M:%S'), 'repeat': 'daily', 'repeat_interval': 2, 'end_by': ''}
-        page = self.client.get(url('event_add'), query)
+        page = self.client.get(url('event_add'), {**query, 'length': '1h 30m'})
         self.assertContains(page, 'id="repeat_next"')
         for days in (0, 2, 4):
-            self.assertContains(page, (start + timedelta(days=days)).strftime('%Y-%m-%d 10:00'))
-        # Ends: until a day to begin with, or a number of times, which the next times follow.
+            self.assertContains(page, when_text(start + timedelta(days=days)))
+        # The length shows the end it gives.
+        self.assertContains(page, 'ends ' + when_text(start + timedelta(minutes=90)))
+        # Ends: no end to begin with (no fields), until a day, or a number of times, which the next times follow.
+        self.assertNotIn('repeat_until', page.context['form'].fields)
+        self.assertNotIn('repeat_count', page.context['form'].fields)
+        page = self.client.get(url('event_add'), {**query, 'repeat_end_by': 'until'})
+        self.assertIn('repeat_until', page.context['form'].fields)
         self.assertNotIn('repeat_count', page.context['form'].fields)
         page = self.client.get(url('event_add'), {**query, 'repeat_end_by': 'count', 'repeat_count': 2})
         self.assertNotIn('repeat_until', page.context['form'].fields)
-        self.assertNotContains(page, (start + timedelta(days=4)).strftime('%Y-%m-%d 10:00'))
+        self.assertNotContains(page, when_text(start + timedelta(days=4)))
 
-        # All day: the start is picked as a date, and the next times are days.
+        # All day: the start is picked as a date, End by and Length are gone, and the next times are days.
         page = self.client.get(url('event_add'), {**query, 'all_day': 'on'})
         form = page.context['form']
         self.assertEqual(form.fields['start'].widget.__class__.__name__, 'CalendarDatePicker')
         self.assertEqual(form.initial['start'], start.strftime('%Y-%m-%d'))
-        self.assertNotContains(page, start.strftime('%Y-%m-%d 10:00'))
+        self.assertNotIn('end_by', form.fields)
+        self.assertNotIn('length', form.fields)
+        self.assertContains(page, when_text(start, all_day=True))
+        self.assertNotContains(page, when_text(start))
+
+        # Saved as all day without a last day: the start day only. With No end, the rule has no end.
+        data = {
+            'title': 'Freeze', 'event_type': EventType.objects.get(slug='upgrade').pk, 'status': 'planned',
+            'impact': 'none', 'start': start.strftime('%Y-%m-%d'), 'all_day': 'on', 'repeat': 'weekly',
+            'repeat_interval': 1, 'repeat_end_by': 'never', 'repeat_until': '2030-01-01',
+        }
+        self.assertEqual(self.client.post(url('event_add'), data).status_code, 302)
+        event = Event.objects.get(title='Freeze')
+        self.assertEqual(event.end - event.start, timedelta(days=1))
+        self.assertNotIn('UNTIL', event.rrule)
+        self.assertNotIn('COUNT', event.rrule)
 
         # Redrawn with All day unticked, an all-day event's form shows times again.
         self.event.all_day = True
