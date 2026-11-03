@@ -35,7 +35,7 @@ def display_name(user):
 def involving(user):
     """Filter for the events `user` owns or is on, directly or through a group."""
     return (
-        models.Q(event_owner=user) | models.Q(people__user=user) | models.Q(people__group__users=user)
+        models.Q(event_owner=user) | models.Q(people__user=user) | models.Q(people__group__user=user)
     )
 
 

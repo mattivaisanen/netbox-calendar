@@ -31,7 +31,7 @@ def editable(queryset, user):
     return queryset.filter(
         Q(event_owner=user)
         | Q(people__user=user, people__role__can_edit=True)
-        | Q(people__group__users=user, people__role__can_edit=True)
+        | Q(people__group__user=user, people__role__can_edit=True)
     ).distinct()
 
 
