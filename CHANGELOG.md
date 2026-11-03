@@ -4,6 +4,14 @@
 
 - Upcoming Events widget: the start time now sits on the same line as the event title.
 
+## 0.1.1 (2026-11-03)
+
+- iCal feed: time zone rules start in 1970 so they cover events of every
+  year, a standard `NAME` next to `X-WR-CALNAME`, a one-hour refresh hint,
+  and the feed is served inline and not cached by proxies.
+- Calendar Feed page and usage docs explain why Outlook on the web can fail
+  to subscribe to a NetBox that is only reachable internally.
+
 ## 0.1.0 (2026-11-03)
 
 First release.
