@@ -756,6 +756,10 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
             if 'length' not in self.initial:
                 self.initial['length'] = format_length(int((instance.end - instance.start).total_seconds() // 60))
 
+        # NetBox draws a hidden empty "all_day" before the tick box, so a ticked box
+        # sends both values, which come in as a list.
+        if isinstance(self.initial.get('all_day'), (list, tuple)):
+            self.initial['all_day'] = any(self.initial['all_day'])
         # Redrawn by HTMX (the When section's End by is sent along): an unticked
         # All day sends nothing, so it is off rather than the stored value.
         if not self.is_bound and 'end_by' in self.initial and 'all_day' not in self.initial:
@@ -874,8 +878,11 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         return get_field_value(self, 'repeat_end_by') or NEVER
 
     def all_day_value(self):
-        value = self.data.get('all_day') if self.is_bound else get_field_value(self, 'all_day')
-        return value is True or str(value).lower() in ('on', 'true', '1')
+        if self.is_bound:
+            values = self.data.getlist('all_day') if hasattr(self.data, 'getlist') else [self.data.get('all_day')]
+        else:
+            values = [get_field_value(self, 'all_day')]
+        return any(value is True or str(value).lower() in ('on', 'true', '1') for value in values)
 
     def length_end_text(self):
         """The end the typed length gives, as in "ends Tue 10.11.2026 12:00"; empty when it can't be worked out."""

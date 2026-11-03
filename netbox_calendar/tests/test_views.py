@@ -140,7 +140,8 @@ class PageTests(TestCase):
         self.assertNotContains(page, when_text(start + timedelta(days=4)))
 
         # All day: the start is picked as a date, End by and Length are gone, and the next times are days.
-        page = self.client.get(url('event_add'), {**query, 'all_day': 'on'})
+        # NetBox sends its hidden empty value along with the ticked box.
+        page = self.client.get(url('event_add'), {**query, 'all_day': ['', 'on']})
         form = page.context['form']
         self.assertEqual(form.fields['start'].widget.__class__.__name__, 'CalendarDatePicker')
         self.assertEqual(form.initial['start'], start.strftime('%Y-%m-%d'))
