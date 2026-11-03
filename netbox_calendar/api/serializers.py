@@ -90,13 +90,14 @@ class EventObjectSerializer(ChangeLogMessageSerializer, ValidatedModelSerializer
 
 
 class EventPersonSerializer(ChangeLogMessageSerializer, ValidatedModelSerializer):
-    """A user or contact on an event, with a role."""
+    """A user, user group or contact on an event, with a role."""
     event = EventSerializer(nested=True)
     role = EventRoleSerializer(nested=True)
     user = UserSerializer(nested=True, required=False, allow_null=True)
+    group = GroupSerializer(nested=True, required=False, allow_null=True)
     contact = ContactSerializer(nested=True, required=False, allow_null=True)
 
     class Meta:
         model = EventPerson
-        fields = ('id', 'url', 'display', 'event', 'role', 'user', 'contact', 'created', 'last_updated')
-        brief_fields = ('id', 'url', 'display', 'event', 'role', 'user', 'contact')
+        fields = ('id', 'url', 'display', 'event', 'role', 'user', 'group', 'contact', 'created', 'last_updated')
+        brief_fields = ('id', 'url', 'display', 'event', 'role', 'user', 'group', 'contact')

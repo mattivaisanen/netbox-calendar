@@ -5,7 +5,6 @@ some types or only your own.
 from datetime import timedelta
 
 from django import forms
-from django.db.models import Q
 from django.template.loader import render_to_string
 # Not gettext_lazy: DashboardWidget.__str__ returns the title as is, and
 # Python needs a real str there (NetBox's own widgets do the same).
@@ -16,7 +15,7 @@ from extras.dashboard.utils import register_widget
 from extras.dashboard.widgets import DashboardWidget, WidgetConfigForm
 
 from . import agenda
-from .models import Event, EventType
+from .models import Event, EventType, involving
 
 
 def _type_choices():
@@ -49,7 +48,7 @@ class UpcomingEventsWidget(DashboardWidget):
         if config.get('event_types'):
             events = events.filter(event_type__slug__in=config['event_types'])
         if config.get('only_mine'):
-            events = events.filter(Q(event_owner=request.user) | Q(people__user=request.user)).distinct()
+            events = events.filter(involving(request.user)).distinct()
         now = timezone.now()
         entries = agenda.event_entries(events, now, now + timedelta(days=int(config.get('days') or 14)))
         entries.sort(key=lambda entry: entry.start)

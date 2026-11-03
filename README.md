@@ -20,8 +20,8 @@ Outlook or any other calendar app.
   role *core* at site *dc-2*" that is evaluated when the event is shown.
 - **People:** each event has an owner and people in roles (Technical
   contact, Participant, Observer, or your own). Roles decide who may edit
-  the event and who is notified. Contacts without a NetBox account can be
-  added too.
+  the event and who is notified. A whole user group, or a contact without a
+  NetBox account, can be added too. Names are shown in full.
 - **Notifications** go out when an event is scheduled, changed or cancelled,
   before it starts (reminders), when it starts and when it ends: NetBox's
   bell, NetBox Event Rules (webhooks, scripts) and, if you want, e-mail with

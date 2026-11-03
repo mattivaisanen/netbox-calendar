@@ -8,7 +8,7 @@
 <form method="post" class="form-object-edit mt-3">
   {% csrf_token %}
   <div class="field-group my-4">
-    <div class="text-secondary mb-3">{% trans "Pick a NetBox user, or a contact for someone without an account." %}</div>
+    <div class="text-secondary mb-3">{% trans "Pick a NetBox user, a user group, or a contact for someone without an account." %}</div>
     {% render_form form %}
   </div>
   <div class="text-end my-3">

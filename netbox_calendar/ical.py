@@ -192,6 +192,7 @@ def event_lines(event, objects_text='', attendees=(), organizer=None):
     description = '\n\n'.join(part for part in (
         event.description,
         f'Concerns: {objects_text}' if objects_text else '',
+        f'Owner: {event.owner_name}' if event.event_owner_id else '',
         event.comments,
         link,
     ) if part)

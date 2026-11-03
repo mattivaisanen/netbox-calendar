@@ -14,6 +14,11 @@
   1 week before) plus a box for any other time. On an event, pick whether
   it uses the event type's reminders, its own, or none. Event and event
   type pages show reminder times in words.
+- User groups can be added to an event as people. Each member counts as
+  on the event, for notices and for editing.
+- Users are shown by full name (username when no name is set) on event
+  pages, the event list, user pickers and the iCal feed.
+- Removing a person from an event asks for confirmation.
 
 ## 0.1.1 (2026-11-03)
 

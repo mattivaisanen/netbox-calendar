@@ -60,7 +60,13 @@ class EventTable(NetBoxTable):
             'pk', 'id', 'title', 'event_type', 'status', 'impact', 'start', 'end', 'all_day', 'event_owner',
             'recurrence', 'objects', 'description', 'tags', 'created', 'last_updated',
         )
-        default_columns = ('pk', 'title', 'event_type', 'status', 'impact', 'start', 'end', 'recurrence', 'objects')
+        default_columns = (
+            'pk', 'title', 'event_type', 'status', 'impact', 'start', 'end', 'event_owner', 'recurrence', 'objects',
+        )
+
+    def render_event_owner(self, value, record):
+        # Full name, not the username.
+        return record.owner_name
 
     def render_recurrence(self, value, record):
         return record.recurrence_text()

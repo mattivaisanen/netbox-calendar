@@ -5,9 +5,10 @@ from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from netbox.filtersets import NetBoxModelFilterSet
+from users.models import Group
 
 from .choices import EventStatusChoices, ImpactChoices
-from .models import Event, EventRole, EventType
+from .models import Event, EventRole, EventType, involving
 
 User = get_user_model()
 
@@ -47,6 +48,9 @@ class EventFilterSet(NetBoxModelFilterSet):
     person_id = django_filters.ModelMultipleChoiceFilter(
         field_name='people__user', queryset=User.objects.all(), label=_('Person (user ID)'),
     )
+    group_id = django_filters.ModelMultipleChoiceFilter(
+        field_name='people__group', queryset=Group.objects.all(), label=_('Person (group ID)'),
+    )
     mine = django_filters.BooleanFilter(method='filter_mine', label=_('Owned by or including me'))
     recurring = django_filters.BooleanFilter(method='filter_recurring', label=_('Repeating'))
     # A repeating event counts while its series may still run.
@@ -72,7 +76,7 @@ class EventFilterSet(NetBoxModelFilterSet):
         user = getattr(self.request, 'user', None)
         if not value or user is None or not user.is_authenticated:
             return queryset
-        return queryset.filter(Q(event_owner=user) | Q(people__user=user)).distinct()
+        return queryset.filter(involving(user)).distinct()
 
     def filter_recurring(self, queryset, name, value):
         if value is None:
