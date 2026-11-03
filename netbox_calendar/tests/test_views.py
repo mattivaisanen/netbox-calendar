@@ -8,6 +8,7 @@ from core.models import ObjectChange
 from extras.models import JournalEntry
 
 from .. import plugin_settings
+from ..forms import when_text
 from ..models import Event, EventPerson, EventRole, EventType, FeedToken, OccurrenceChange
 from ..widgets import UpcomingEventsWidget
 from .utils import grant, make_device, make_event, make_user
@@ -48,9 +49,7 @@ class PageTests(TestCase):
         html = UpcomingEventsWidget(config={'days': 3}).render(request)
         self.assertIn(self.event.title, html)
 
-    def test_add_event_with_links_and_people(self):
-        engineer = make_user('engineer')
-        role = EventRole.objects.get(slug='technical-contact')
+    def test_add_event_with_links(self):
         start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
         response = self.client.post(url('event_add'), {
             'title': 'Replace power supply',
@@ -61,8 +60,6 @@ class PageTests(TestCase):
             'repeat': 'monthly_weekday',
             'repeat_interval': 1,
             'include__dcim__device': [self.device.pk],
-            'people_role': role.pk,
-            'people_users': [engineer.pk],
         })
         self.assertEqual(response.status_code, 302)
         event = Event.objects.get(title='Replace power supply')
@@ -70,7 +67,120 @@ class PageTests(TestCase):
         self.assertEqual(event.end - event.start, timedelta(minutes=120))  # The type's default
         self.assertTrue(event.rrule.startswith('FREQ=MONTHLY;BYDAY='))
         self.assertEqual(event.links.get().object, self.device)
-        self.assertTrue(EventPerson.objects.filter(event=event, user=engineer, role=role).exists())
+
+    def test_add_people_in_several_roles(self):
+        # People are added on the event page, several per role.
+        engineer, lead = make_user('engineer'), make_user('lead')
+        technical = EventRole.objects.get(slug='technical-contact')
+        response = self.client.post(url('event_person_add', self.event.pk), {
+            'role': technical.pk, 'users': [engineer.pk, lead.pk], '_addanother': '',
+        })
+        self.assertRedirects(response, url('event_person_add', self.event.pk), fetch_redirect_response=False)
+        other = EventRole.objects.exclude(pk=technical.pk).first()
+        self.client.post(url('event_person_add', self.event.pk), {'role': other.pk, 'users': [lead.pk]})
+        people = set(self.event.people.values_list('user__username', 'role__slug'))
+        self.assertEqual(people, {('engineer', technical.slug), ('lead', technical.slug), ('lead', other.slug)})
+
+        # A role with nobody picked is refused.
+        response = self.client.post(url('event_person_add', self.event.pk), {'role': technical.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Pick at least one')
+
+    def test_end_by_length_or_end_date_and_repeat_ends(self):
+        start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
+        data = {
+            'title': 'Firmware upgrade', 'event_type': EventType.objects.get(slug='upgrade').pk,
+            'status': 'planned', 'impact': 'none', 'start': start.strftime('%Y-%m-%d %H:%M:%S'),
+            'length': '1h 30m', 'end': (start + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S'),
+            'repeat': 'weekly', 'repeat_interval': 1, 'repeat_until': '2030-01-01', 'repeat_count': 4,
+        }
+        # End by and Ends decide: the length, and the number of times.
+        response = self.client.post(url('event_add'), {**data, 'end_by': 'length', 'repeat_end_by': 'count'})
+        self.assertEqual(response.status_code, 302)
+        event = Event.objects.get(title='Firmware upgrade')
+        self.assertEqual(event.end - event.start, timedelta(minutes=90))
+        self.assertIn('COUNT=4', event.rrule)
+        self.assertNotIn('UNTIL', event.rrule)
+        # The edit form opens with the length filled in.
+        self.assertEqual(self.client.get(url('event_edit', event.pk)).context['form'].initial['length'], '1h 30m')
+
+        # The others: the end date, and the last day.
+        response = self.client.post(url('event_edit', event.pk), {**data, 'end_by': 'end', 'repeat_end_by': 'until'})
+        self.assertEqual(response.status_code, 302)
+        event.refresh_from_db()
+        self.assertEqual(event.end - event.start, timedelta(hours=5))
+        self.assertIn('UNTIL=2030', event.rrule)
+        self.assertNotIn('COUNT', event.rrule)
+
+        # A weekly repeat must include the start's weekday, and cannot end before the start.
+        other_day = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][(start.weekday() + 1) % 7]
+        response = self.client.post(url('event_edit', event.pk), {
+            **data, 'repeat_weekdays': [other_day], 'repeat_until': '2020-01-01', 'repeat_end_by': 'until',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.context['form'].errors), {'repeat_weekdays', 'repeat_until'})
+
+        # The date pickers start the week on the configured day (flatpickr: 1 = Monday).
+        self.assertContains(self.client.get(url('event_add')), 'data-first-weekday="1"')
+
+    def test_when_section_end_by_ends_all_day_and_next_times(self):
+        # End by: only the field in use is shown, Length to begin with.
+        page = self.client.get(url('event_add'))
+        self.assertIn('length', page.context['form'].fields)
+        self.assertNotIn('end', page.context['form'].fields)
+        self.assertNotContains(page, 'id="repeat_next"')
+        page = self.client.get(url('event_add'), {'end_by': 'end'})
+        self.assertNotIn('length', page.context['form'].fields)
+        self.assertIn('end', page.context['form'].fields)
+
+        # A repeat lists its next times (in NetBox's date format), as the form is filled in.
+        start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
+        query = {'start': start.strftime('%Y-%m-%d %H:%M:%S'), 'repeat': 'daily', 'repeat_interval': 2, 'end_by': ''}
+        page = self.client.get(url('event_add'), {**query, 'length': '1h 30m'})
+        self.assertContains(page, 'id="repeat_next"')
+        for days in (0, 2, 4):
+            self.assertContains(page, when_text(start + timedelta(days=days)))
+        # The length shows the end it gives.
+        self.assertContains(page, 'ends ' + when_text(start + timedelta(minutes=90)))
+        # Ends: no end to begin with (no fields), until a day, or a number of times, which the next times follow.
+        self.assertNotIn('repeat_until', page.context['form'].fields)
+        self.assertNotIn('repeat_count', page.context['form'].fields)
+        page = self.client.get(url('event_add'), {**query, 'repeat_end_by': 'until'})
+        self.assertIn('repeat_until', page.context['form'].fields)
+        self.assertNotIn('repeat_count', page.context['form'].fields)
+        page = self.client.get(url('event_add'), {**query, 'repeat_end_by': 'count', 'repeat_count': 2})
+        self.assertNotIn('repeat_until', page.context['form'].fields)
+        self.assertNotContains(page, when_text(start + timedelta(days=4)))
+
+        # All day: the start is picked as a date, End by and Length are gone, and the next times are days.
+        # NetBox sends its hidden empty value along with the ticked box.
+        page = self.client.get(url('event_add'), {**query, 'all_day': ['', 'on']})
+        form = page.context['form']
+        self.assertEqual(form.fields['start'].widget.__class__.__name__, 'CalendarDatePicker')
+        self.assertEqual(form.initial['start'], start.strftime('%Y-%m-%d'))
+        self.assertNotIn('end_by', form.fields)
+        self.assertNotIn('length', form.fields)
+        self.assertContains(page, when_text(start, all_day=True))
+        self.assertNotContains(page, when_text(start))
+
+        # Saved as all day without a last day: the start day only. With No end, the rule has no end.
+        data = {
+            'title': 'Freeze', 'event_type': EventType.objects.get(slug='upgrade').pk, 'status': 'planned',
+            'impact': 'none', 'start': start.strftime('%Y-%m-%d'), 'all_day': 'on', 'repeat': 'weekly',
+            'repeat_interval': 1, 'repeat_end_by': 'never', 'repeat_until': '2030-01-01',
+        }
+        self.assertEqual(self.client.post(url('event_add'), data).status_code, 302)
+        event = Event.objects.get(title='Freeze')
+        self.assertEqual(event.end - event.start, timedelta(days=1))
+        self.assertNotIn('UNTIL', event.rrule)
+        self.assertNotIn('COUNT', event.rrule)
+
+        # Redrawn with All day unticked, an all-day event's form shows times again.
+        self.event.all_day = True
+        self.event.save()
+        # NetBox draws a hidden empty "all_day" next to the tick box, so an unticked box sends "".
+        page = self.client.get(url('event_edit', self.event.pk), {**query, 'all_day': ''})
+        self.assertEqual(page.context['form'].fields['start'].widget.__class__.__name__, 'CalendarDateTimePicker')
 
     def test_edit_keeps_links_and_lists_role_devices(self):
         # The edit form shows the linked device, so saving it unchanged keeps the link.

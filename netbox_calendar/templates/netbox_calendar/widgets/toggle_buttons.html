@@ -1,0 +1,10 @@
+{# A choice as a row of buttons; picking one redraws the When section (HTMX). #}
+<div class="btn-group" role="group"{% if widget.attrs.id %} id="{{ widget.attrs.id }}"{% endif %}
+     hx-get="." hx-include="#form_fields" hx-target="#when_fields" hx-select="#when_fields" hx-swap="outerHTML"
+     hx-trigger="change">
+  {% for group, options, index in widget.optgroups %}{% for option in options %}
+    <input type="radio" class="btn-check" name="{{ widget.name }}" value="{{ option.value|stringformat:'s' }}"
+           id="{{ option.attrs.id }}" autocomplete="off"{% if option.selected %} checked{% endif %}>
+    <label class="btn btn-outline-secondary" for="{{ option.attrs.id }}">{{ option.label }}</label>
+  {% endfor %}{% endfor %}
+</div>
