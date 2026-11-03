@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+.ruff_cache/
+dump.rdb
+
+# Local assistant files
+CLAUDE.md
+CLAUDE.local.md
+.claude/
