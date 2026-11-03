@@ -17,6 +17,7 @@ from django.utils.translation import gettext as _
 from django.views.generic import View
 
 from dcim.models import Device
+from virtualization.models import VirtualMachine
 from extras.forms import JournalEntryForm
 from extras.models import JournalEntry
 from netbox.views import generic
@@ -24,7 +25,7 @@ from utilities.htmx import htmx_partial
 from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
 from . import agenda, filtersets, forms, ical, plugin_settings, recurrence, tables
-from .lookup import DEVICE_MATCHES, Targets, affected_devices, describe, filtered_objects
+from .lookup import DEVICE_MATCHES, Targets, affected_devices, affected_vms, describe, filtered_objects
 from .models import Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting
 from .permissions import can_edit, editable
 
@@ -149,8 +150,8 @@ class EventListView(generic.ObjectListView):
     table = tables.EventTable
 
 
-def _same_targets(event, other, devices):
-    """Whether two events concern a same object: one picked by both, or a device both affect."""
+def _same_targets(event, other, devices, vms):
+    """Whether two events concern a same object: one picked by both, or a device or VM both affect."""
     keys = set(event.links.filter(exclude=False).values_list('object_type_id', 'object_id'))
     shared = other.links.filter(exclude=False).values_list('object_type_id', 'object_id', 'object_type__app_label',
                                                            'object_type__model')
@@ -158,24 +159,26 @@ def _same_targets(event, other, devices):
         # A shared site or role alone is no clash: their devices are compared below.
         if (type_id, object_id) in keys and f'{app_label}.{model}' not in DEVICE_MATCHES:
             return True
-    return devices.filter(pk__in=affected_devices(other).values('pk')).exists()
+    return devices.filter(pk__in=affected_devices(other).values('pk')).exists() \
+        or vms.filter(pk__in=affected_vms(other).values('pk')).exists()
 
 
 def conflicts(event, user):
     """
     [(other event, occurrence)] overlapping this event's next occurrence
-    on a shared object: one both pick, or a device both affect.
+    on a shared object: one both pick, or a device or VM both affect.
     """
     if not plugin_settings.on('conflict_warnings'):
         return []
     occurrence = event.next_occurrence()
     if occurrence is None:
         return []
-    devices = affected_devices(event)
-    # Candidates: events linking something this one links, or one of its devices.
+    devices, vms = affected_devices(event), affected_vms(event)
+    # Candidates: events linking something this one links, or one of its devices or VMs.
     keys = list(event.links.filter(exclude=False).values_list('object_type_id', 'object_id'))
-    device_type = ContentType.objects.get_for_model(Device)
-    keys += [(device_type.pk, pk) for pk in devices.values_list('pk', flat=True)[:DEVICES_SHOWN]]
+    for found in (devices, vms):
+        content_type = ContentType.objects.get_for_model(found.model)
+        keys += [(content_type.pk, pk) for pk in found.values_list('pk', flat=True)[:DEVICES_SHOWN]]
     if not keys:
         return []
 
@@ -186,7 +189,7 @@ def conflicts(event, user):
     found = []
     for other in others.distinct().select_related('event_type'):
         overlapping = other.occurrences(occurrence.start, occurrence.end)
-        if overlapping and _same_targets(event, other, devices):
+        if overlapping and _same_targets(event, other, devices, vms):
             found.append((other, overlapping[0]))
     return found
 
@@ -224,6 +227,8 @@ class EventView(generic.ObjectView):
         targets = Targets(instance)
         devices = affected_devices(instance, targets).restrict(request.user, 'view')
         devices_total = devices.count()
+        vms = affected_vms(instance, targets).restrict(request.user, 'view')
+        vms_total = vms.count()
         now = timezone.now()
         upcoming = instance.occurrences(now, now + timedelta(days=3660))[:10] if instance.rrule else []
         return {
@@ -232,6 +237,9 @@ class EventView(generic.ObjectView):
             'devices': devices.select_related('site', 'role', 'device_type').order_by('name')[:DEVICES_SHOWN],
             'devices_total': devices_total,
             'devices_more': max(devices_total - DEVICES_SHOWN, 0),
+            'vms': vms.select_related('site', 'cluster', 'role').order_by('name')[:DEVICES_SHOWN],
+            'vms_total': vms_total,
+            'vms_more': max(vms_total - DEVICES_SHOWN, 0),
             'filter_count': (filtered_objects(instance).count() if instance.filter_object_type_id else None),
             'people': instance.people.select_related('role', 'user', 'group', 'contact'),
             'upcoming': upcoming,
@@ -381,7 +389,7 @@ class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
     """
     The event form's Result (HTMX): reads the objects rows and the filter
     from the address, as the form would save them, and says in plain words
-    what the event covers and how many devices that is.
+    what the event covers and how many devices and VMs that is.
     """
     template_name = 'netbox_calendar/inc/target_summary.html'
     LIMIT = 30
@@ -431,7 +439,9 @@ class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
 
         devices = affected_devices(event, targets).restrict(request.user, 'view').order_by('name')
         device_count = devices.count()
-        others = [obj for obj in targets.picked if not isinstance(obj, Device)]
+        vms = affected_vms(event, targets).restrict(request.user, 'view').order_by('name')
+        vm_count = vms.count()
+        others = [obj for obj in targets.picked if not isinstance(obj, (Device, VirtualMachine))]
         if event.filter_object_type_id and not targets.filter_is_criterion and targets.filtered is not None:
             others_count = len(others) + targets.filtered.count()
         else:
@@ -442,6 +452,11 @@ class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
             'device_count': device_count,
             'devices': devices[:self.LIMIT],
             'more_devices': max(device_count - self.LIMIT, 0),
+            'vm_count': vm_count,
+            'found': (
+                (_('Devices'), devices[:self.LIMIT], max(device_count - self.LIMIT, 0)),
+                (_('Virtual machines'), vms[:self.LIMIT], max(vm_count - self.LIMIT, 0)),
+            ),
             'other_count': others_count,
         })
 

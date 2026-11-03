@@ -9,6 +9,9 @@
   devices. The rule itself is unchanged.
 - On the event page, each linked object has its own row in the Objects
   card with an unlink button on the right.
+- Fixed: rules didn't list VMs. Result, the event page (**Affected Virtual
+  Machines**), conflict warnings and notices (`vms`) now include the VMs a
+  rule covers.
 - Tags can be a condition: an event on a tag covers the devices and VMs
   carrying it.
 - The event page shows the event's journal where the empty Comments panel

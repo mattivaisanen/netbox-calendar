@@ -2,9 +2,10 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from dcim.models import DeviceRole, Location
+from dcim.models import DeviceRole, Location, Platform
+from virtualization.models import VirtualMachine
 
-from ..lookup import affected_devices, concerns, describe, events_for_object
+from ..lookup import affected_devices, affected_vms, concerns, describe, events_for_object
 from ..models import Event, EventObject
 from .utils import make_device, make_event, make_user
 
@@ -74,6 +75,26 @@ class TargetRuleTests(TestCase):
         # The location and the role pages list it too.
         self.assertIn(self.event, events_for_object(self.here, events))
         self.assertIn(self.event, events_for_object(self.access, events))
+
+
+class VMTargetTests(TestCase):
+    """VMs meet criteria like devices do; a kind VMs can't have (a location) matches none."""
+
+    def test_vms_follow_the_rule(self):
+        site = make_device().site
+        role = DeviceRole.objects.create(name='Server', slug='server', vm_role=True)
+        platform = Platform.objects.create(name='Windows Server', slug='windows-server')
+        vm = VirtualMachine.objects.create(name='vm-1', site=site, role=role, platform=platform)
+        event = make_event()
+        EventObject.objects.create(event=event, object=platform)
+        self.assertEqual(list(affected_vms(event)), [vm])
+        self.assertTrue(concerns(event, vm))
+
+        EventObject.objects.create(event=event, object=role)
+        self.assertEqual(list(affected_vms(event)), [vm])
+        EventObject.objects.create(event=event, object=Location.objects.create(name='Hall', slug='hall', site=site))
+        self.assertEqual(list(affected_vms(event)), [])
+        self.assertFalse(concerns(event, vm))
 
 
 class TargetFormTests(TestCase):

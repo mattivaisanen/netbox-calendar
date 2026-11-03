@@ -109,7 +109,9 @@ The kinds that match devices are sites, locations, regions, site groups,
 racks, clusters, device roles, device types, manufacturers, platforms, tags and
 tenants. Each covers what is under it, including devices added later: a
 region covers the devices of its sites, a location those of its child
-locations. The event page lists the result under **Affected Devices**, and
+locations. VMs match the same way, except on kinds they don't have
+(device type, manufacturer, location, rack). The event page lists the
+result under **Affected Devices** and **Affected Virtual Machines**, and
 the **Objects** card shows the rule in words.
 
 ### Adding objects

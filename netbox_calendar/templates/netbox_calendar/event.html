@@ -211,6 +211,31 @@
         {% endif %}
       </table>
     </div>
+    {% if vms_total %}
+      <div class="card">
+        {# Every VM the event concerns, worked out like the devices above. #}
+        <h2 class="card-header">
+          {% trans "Affected Virtual Machines" %} <span class="badge text-bg-secondary">{{ vms_total }}</span>
+        </h2>
+        <table class="table table-hover">
+          <thead>
+            <tr><th>{% trans "Virtual machine" %}</th><th>{% trans "Site" %}</th><th>{% trans "Cluster" %}</th><th>{% trans "Role" %}</th><th>{% trans "Status" %}</th></tr>
+          </thead>
+          {% for vm in vms %}
+            <tr>
+              <td>{{ vm|linkify }}</td>
+              <td>{{ vm.site|linkify|placeholder }}</td>
+              <td>{{ vm.cluster|linkify|placeholder }}</td>
+              <td>{% if vm.role %}{% badge vm.role hex_color=vm.role.color %}{% else %}{{ ''|placeholder }}{% endif %}</td>
+              <td>{% badge vm.get_status_display bg_color=vm.get_status_color %}</td>
+            </tr>
+          {% endfor %}
+          {% if vms_more %}
+            <tr><td colspan="5" class="text-secondary small">{% blocktrans count count=vms_more %}and {{ count }} more virtual machine{% plural %}and {{ count }} more virtual machines{% endblocktrans %}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    {% endif %}
     <div class="card">
       <h2 class="card-header d-flex justify-content-between align-items-center">
         {% trans "People" %}

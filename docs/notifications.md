@@ -123,6 +123,7 @@ Available in body templates as `{{ data.<field> }}` and in conditions:
 | `objects` | included objects: `[{"type": "dcim.device", "id": 7, "name": "agg-3", "link": "..."}]` |
 | `excluded` | excluded objects, each like `objects` |
 | `devices` | affected devices (at most 50), each like `objects` |
+| `vms` | affected virtual machines (at most 50), each like `objects` |
 | `owner`, `by` | `{"id": 3, "username": "...", "name": "...", "email": "..."}`; `by` is who made the change, `null` for notices from the worker |
 | `people` | `[{"role": "Technical contact", "name": "...", "email": "..."}]` |
 | `recipients` | users to tell, each like `owner` |

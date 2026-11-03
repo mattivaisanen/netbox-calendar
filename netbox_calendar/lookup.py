@@ -16,7 +16,8 @@ An event's links (EventObject) are read as targeting rules:
 
 Criteria cover devices only with the scope_rollup setting. Without it a
 link concerns just the linked object. concerns() answers the rule for one
-object, affected_devices() for every device at once; the two must agree.
+object, affected_devices() and affected_vms() for every device or VM at
+once; they must agree.
 """
 from collections import OrderedDict
 
@@ -276,58 +277,98 @@ def concerns(event, obj):
     return Targets(event).concerns(obj)
 
 
-def affected_devices(event, targets=None):
-    """
-    Every device the event concerns, as a queryset: devices meeting all
-    its criteria, devices picked one by one (or through a component), less
-    excluded ones.
-    """
-    from dcim.models import Device  # NetBox's own app: always installed.
+#: How a criterion picks VMs, like DEVICE_MATCHES for devices. None: no VM
+#: can match it (VMs have no device type, location or rack).
+VM_MATCHES = {
+    'dcim.devicerole': lambda obj: Q(role__in=_tree(obj)),
+    'dcim.devicetype': None,
+    'dcim.manufacturer': None,
+    'dcim.platform': lambda obj: Q(platform__in=_tree(obj)),
+    'dcim.site': lambda obj: Q(site=obj),
+    'dcim.region': lambda obj: Q(site__region__in=_tree(obj)),
+    'dcim.sitegroup': lambda obj: Q(site__group__in=_tree(obj)),
+    'dcim.location': None,
+    'dcim.rack': None,
+    'virtualization.cluster': lambda obj: Q(cluster=obj),
+    'tenancy.tenant': lambda obj: Q(tenant=obj),
+    'extras.tag': lambda obj: Q(tags=obj),
+}
 
-    targets = targets or Targets(event)
+
+def _vm_of(obj):
+    """The VM of a VM interface or disk, or None."""
+    from virtualization.models import VirtualMachine  # NetBox's own app: always installed.
+
+    vm = getattr(obj, 'virtual_machine', None) if hasattr(obj, 'virtual_machine_id') else None
+    return vm if isinstance(vm, VirtualMachine) else None
+
+
+def _affected(model, matches, owner_of, targets):
+    """
+    Every `model` object (devices or VMs) the rule takes in: meeting all its
+    criteria (`matches` turns one into a Q), picked one by one or through a
+    component (`owner_of`), less excluded ones.
+    """
+    label = model._meta.label_lower
     condition = Q()
 
-    if targets.has_criteria:
-        if targets.filter_label == 'virtualization.virtualmachine':
-            criteria = None  # A VM filter: no device can match.
-        else:
-            criteria = Q()
-            for label, objects in targets.criteria.items():
-                # Any of one kind ...
-                any_of = Q()
-                for obj in objects:
-                    any_of |= DEVICE_MATCHES[label](obj)
-                # ... and each kind.
-                criteria &= any_of
-            if targets.filter_label == 'dcim.device':
-                criteria &= Q(pk__in=targets.filtered.values('pk'))
+    # A device filter is a criterion no VM meets, and a VM filter one no device meets.
+    other_filter = targets.filter_is_criterion and targets.filter_label != label
+    if targets.has_criteria and not other_filter:
+        criteria = Q()
+        for kind, objects in targets.criteria.items():
+            if matches.get(kind) is None:
+                criteria = None  # A kind this model can't have: nothing matches.
+                break
+            # Any of one kind ...
+            any_of = Q()
+            for obj in objects:
+                any_of |= matches[kind](obj)
+            # ... and each kind.
+            criteria &= any_of
+        if criteria is not None and targets.filter_label == label:
+            criteria &= Q(pk__in=targets.filtered.values('pk'))
         if criteria is not None:
             condition |= criteria
 
     picked = set()
     for obj in targets.picked:
-        if isinstance(obj, Device):
+        if isinstance(obj, model):
             picked.add(obj.pk)
-        elif (device := _device_of(obj)) is not None:
-            picked.add(device.pk)
+        elif (owner := owner_of(obj)) is not None:
+            picked.add(owner.pk)
     if picked:
         condition |= Q(pk__in=picked)
 
     if not condition:
-        return Device.objects.none()
+        return model.objects.none()
 
-    # Excluded devices, and devices under an excluded site, role, ...
+    # Excluded objects, and those under an excluded site, role, ...
     excluded = Q()
     for obj in targets.excluded:
-        label = obj._meta.label_lower
-        if label == 'dcim.device':
+        kind = obj._meta.label_lower
+        if kind == label:
             excluded |= Q(pk=obj.pk)
-        elif label in DEVICE_MATCHES and targets.rollup:
-            excluded |= DEVICE_MATCHES[label](obj)
-    devices = Device.objects.filter(condition)
+        elif matches.get(kind) is not None and targets.rollup:
+            excluded |= matches[kind](obj)
+    found = model.objects.filter(condition)
     if excluded:
-        devices = devices.exclude(excluded)
-    return devices.distinct()
+        found = found.exclude(excluded)
+    return found.distinct()
+
+
+def affected_devices(event, targets=None):
+    """Every device the event concerns, as a queryset (see _affected())."""
+    from dcim.models import Device  # NetBox's own app: always installed.
+
+    return _affected(Device, DEVICE_MATCHES, _device_of, targets or Targets(event))
+
+
+def affected_vms(event, targets=None):
+    """Every VM the event concerns, as a queryset (see _affected())."""
+    from virtualization.models import VirtualMachine  # NetBox's own app: always installed.
+
+    return _affected(VirtualMachine, VM_MATCHES, _vm_of, targets or Targets(event))
 
 
 def linked_objects(event, limit=100):

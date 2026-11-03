@@ -9,6 +9,11 @@
         <span class="badge text-bg-primary">
           {% blocktrans count counter=device_count %}{{ counter }} device{% plural %}{{ counter }} devices{% endblocktrans %}
         </span>
+        {% if vm_count %}
+          <span class="badge text-bg-primary">
+            {% blocktrans count counter=vm_count %}{{ counter }} VM{% plural %}{{ counter }} VMs{% endblocktrans %}
+          </span>
+        {% endif %}
         {% if other_count %}
           <span class="badge text-bg-secondary">
             {% blocktrans count counter=other_count %}{{ counter }} other object{% plural %}{{ counter }} other objects{% endblocktrans %}
@@ -32,19 +37,21 @@
         </li>
       {% endfor %}
     </ul>
-    {% if devices %}
-      <div class="card-body border-top">
-        <div class="text-secondary small fw-bold mb-2">{% trans "Devices" %}</div>
-        <div class="d-flex flex-wrap gap-1">
-          {% for device in devices %}
-            <a href="{{ device.get_absolute_url }}" class="badge border text-reset fw-normal" target="_blank">{{ device }}</a>
-          {% endfor %}
-          {% if more_devices %}
-            <span class="badge text-secondary fw-normal">{% blocktrans %}and {{ more_devices }} more{% endblocktrans %}</span>
-          {% endif %}
+    {% for heading, objects, more in found %}
+      {% if objects %}
+        <div class="card-body border-top">
+          <div class="text-secondary small fw-bold mb-2">{{ heading }}</div>
+          <div class="d-flex flex-wrap gap-1">
+            {% for obj in objects %}
+              <a href="{{ obj.get_absolute_url }}" class="badge border text-reset fw-normal" target="_blank">{{ obj }}</a>
+            {% endfor %}
+            {% if more %}
+              <span class="badge text-secondary fw-normal">{% blocktrans %}and {{ more }} more{% endblocktrans %}</span>
+            {% endif %}
+          </div>
         </div>
-      </div>
-    {% endif %}
+      {% endif %}
+    {% endfor %}
   {% endif %}
 </div>
 <style>.calendar-result-badge { min-width: 4.5rem; }</style>
