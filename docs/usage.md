@@ -37,7 +37,6 @@ object's Events card, or **Schedule Event** above an object list.
 | Reminders | *Same as the event type*, *No reminders*, or *Pick for this event*: tick common times (15 minutes to 1 week before) and type any others in **Other times**, such as `3d, 45m`. |
 | Objects | What the event affects. **Add objects...** adds a picker for one kind, to match, include or exclude. See [Objects](#objects). |
 | Objects by filter | Rarely needed; see [Events by filter](#events-by-filter). |
-| Role, Users, Groups, Contacts | People to add with one role. More from the event page. |
 
 Times are in NetBox's `TIME_ZONE`.
 
@@ -179,8 +178,11 @@ Roles (Calendar → Event Roles) decide:
 - **Can edit:** people in the role may change the event.
 - **Notify:** people in the role get the event's notices.
 
-**Add Person** on the event page adds one; **Change role** and **Remove**
-change them. **Remove** asks for confirmation first.
+People are added on the event page, not in the event form. **Add People**
+on the People card takes a role and any mix of users, groups and contacts
+for it. **Add and pick another role** saves them and opens the form again
+for the next role. **Change role** and **Remove** change one person;
+**Remove** asks for confirmation first. The owner is set in the event form.
 
 ### Who can edit an event
 

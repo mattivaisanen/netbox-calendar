@@ -19,8 +19,9 @@ The calendar tells people about events in three ways:
 | Started | an occurrence starts | Event started |
 | Ended | an occurrence ends | Event ended |
 
-Saving an event together with its objects and people sends one notice,
-not one per change. Moving to *In progress* or *Done* sends no *Changed*
+Saving an event together with its objects sends one notice, not one per
+change, and so does adding several people at once. People added after an
+event is created get the *Changed* notice, not *Scheduled*. Moving to *In progress* or *Done* sends no *Changed*
 notice; that is what *Started* and *Ended* are for. Deleting an event
 sends nothing, so cancel it instead.
 

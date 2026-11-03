@@ -499,8 +499,8 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
     """
     Add or edit an event. Besides the event's own fields it has the objects
     section (TargetFieldsMixin): saving links what was added and unlinks
-    what was taken out. People are added with one role. Repeat fields build
-    the iCal rule (recurrence.build()).
+    what was taken out. People are added on the event page. Repeat fields
+    build the iCal rule (recurrence.build()).
     """
     event_type = DynamicModelChoiceField(queryset=EventType.objects.all(), label=_('Type'))
     event_owner = UserChoiceField(
@@ -553,16 +553,6 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
                     'Objects added later match too.'),
     )
 
-    people_role = DynamicModelChoiceField(queryset=EventRole.objects.all(), required=False, label=_('Role'))
-    people_users = UserMultipleChoiceField(queryset=User.objects.all(), required=False, label=_('Users'))
-    people_groups = DynamicModelMultipleChoiceField(
-        queryset=Group.objects.all(), required=False, label=_('Groups'),
-        help_text=_('Everyone in the group is on the event.'),
-    )
-    people_contacts = DynamicModelMultipleChoiceField(
-        queryset=Contact.objects.all(), required=False, label=_('Contacts'),
-        help_text=_('People without a NetBox account; notified by e-mail.'),
-    )
     comments = CommentField()
 
     fieldsets = (
@@ -573,7 +563,6 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         # The pickers in use are added to this section in __init__().
         FieldSet('add_target', name=_('Objects'), html_id='target_fields'),
         FieldSet('filter_object_type', 'filter_query', name=_('Objects by filter')),
-        FieldSet('people_role', 'people_users', 'people_groups', 'people_contacts', name=_('Add people')),
         FieldSet('reminder_source', 'reminder_presets', 'reminder_other', name=_('Notifications'),
                  html_id='reminder_fields'),
     )
@@ -636,14 +625,11 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         for name in unused:
             self.fields.pop(name, None)
 
-        # Picking users or groups needs permission to view them; without it the
+        # Picking the owner needs permission to view users; without it the
         # owner stays as it is (yourself on a new event).
         editor = getattr(instance, '_calendar_editor', None)
         if editor is not None and not editor.has_perm('users.view_user'):
-            for name in ('event_owner', 'people_users'):
-                self.fields.pop(name, None)
-        if editor is not None and not editor.has_perm('users.view_group'):
-            self.fields.pop('people_groups', None)
+            self.fields.pop('event_owner', None)
 
     def clean(self):
         super().clean()
@@ -689,22 +675,11 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
             self.instance.reminders = None if source == REMINDERS_FROM_TYPE else []
 
         self.clean_targets()
-        if any(data.get(name) for name in ('people_users', 'people_groups', 'people_contacts')) \
-                and not data.get('people_role'):
-            self.add_error('people_role', _('Pick the role of the people added.'))
         return data
 
     def save(self, *args, **kwargs):
         event = super().save(*args, **kwargs)
         self.save_targets(event)
-        role = self.cleaned_data.get('people_role')
-        if role is not None:
-            for user in self.cleaned_data.get('people_users') or ():
-                EventPerson.objects.get_or_create(event=event, role=role, user=user)
-            for group in self.cleaned_data.get('people_groups') or ():
-                EventPerson.objects.get_or_create(event=event, role=role, group=group)
-            for contact in self.cleaned_data.get('people_contacts') or ():
-                EventPerson.objects.get_or_create(event=event, role=role, contact=contact)
         return event
 
 
@@ -794,7 +769,50 @@ class LinkObjectsForm(LinkFieldsMixin, forms.Form):
         return self.cleaned_data
 
 
+class AddPeopleForm(forms.Form):
+    """
+    Add people to an event in one role: any mix of users, groups and
+    contacts. Add more people in another role with the same form again.
+    """
+    role = DynamicModelChoiceField(queryset=EventRole.objects.all(), label=_('Role'))
+    users = UserMultipleChoiceField(queryset=User.objects.all(), required=False, label=_('Users'))
+    groups = DynamicModelMultipleChoiceField(
+        queryset=Group.objects.all(), required=False, label=_('Groups'),
+        help_text=_('Everyone in the group is on the event.'),
+    )
+    contacts = DynamicModelMultipleChoiceField(
+        queryset=Contact.objects.all(), required=False, label=_('Contacts'),
+        help_text=_('People without a NetBox account; notified by e-mail.'),
+    )
+
+    fieldsets = (FieldSet('role', 'users', 'groups', 'contacts'),)
+
+    def __init__(self, *args, editor=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Picking users or groups needs permission to view them.
+        if editor is not None and not editor.has_perm('users.view_user'):
+            self.fields.pop('users')
+        if editor is not None and not editor.has_perm('users.view_group'):
+            self.fields.pop('groups')
+
+    def clean(self):
+        super().clean()
+        if not any(self.cleaned_data.get(name) for name in ('users', 'groups', 'contacts')):
+            raise ValidationError(_('Pick at least one user, group or contact.'))
+        return self.cleaned_data
+
+    def save(self, event):
+        """Add the picked people; anyone already in the role is left as is. Returns how many were added."""
+        role = self.cleaned_data['role']
+        added = 0
+        for field, kind in (('users', 'user'), ('groups', 'group'), ('contacts', 'contact')):
+            for value in self.cleaned_data.get(field) or ():
+                added += EventPerson.objects.get_or_create(event=event, role=role, **{kind: value})[1]
+        return added
+
+
 class EventPersonForm(forms.ModelForm):
+    """Change one person on an event: their role, or who it is."""
     role = DynamicModelChoiceField(queryset=EventRole.objects.all(), label=_('Role'))
     user = UserChoiceField(queryset=User.objects.all(), required=False, label=_('User'))
     group = DynamicModelChoiceField(queryset=Group.objects.all(), required=False, label=_('Group'))
