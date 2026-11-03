@@ -1,4 +1,3 @@
-import json
 import re
 from datetime import datetime, time, timedelta
 
@@ -22,7 +21,7 @@ from utilities.forms.fields import (
     ColorField, CommentField, ContentTypeChoiceField, CSVChoiceField, CSVModelChoiceField, DynamicModelChoiceField,
     DynamicModelMultipleChoiceField, SlugField, TagFilterField,
 )
-from utilities.forms.rendering import FieldSet, TabbedGroups
+from utilities.forms.rendering import FieldSet
 from utilities.forms.utils import get_field_value
 from utilities.forms.widgets import DatePicker, DateTimePicker, HTMXSelect
 
@@ -71,30 +70,12 @@ class CalendarDateTimePicker(CalendarPickerMixin, DateTimePicker):
     pass
 
 
-class TabChoiceInput(forms.HiddenInput):
+class ToggleButtons(forms.RadioSelect):
     """
-    Remembers which tab of a TabbedGroups is open, so the form knows which
-    of the alternatives to use. `tabs` maps the first field of each tab to
-    the value sent while that tab is open; inc/form_script.html keeps the
-    value up to date and shows the tabs in NetBox's tab style.
+    A choice shown as a row of buttons (one pressed). Picking another one
+    redraws the When section (HTMX), showing only the field that choice uses.
     """
-    template_name = 'netbox_calendar/widgets/tab_choice.html'
-
-    def __init__(self, tabs, attrs=None):
-        tabs = {f'id_{field}': value for field, value in tabs.items()}
-        super().__init__(attrs={**(attrs or {}), 'data-nbcal-tabs': json.dumps(tabs)})
-
-
-def tabs(tabs_id, *fieldsets):
-    """
-    NetBox's TabbedGroups with a fixed id. NetBox picks a random one, which
-    can start with a digit: the tab buttons then point at "#1abc..", not a
-    valid selector, and do nothing when clicked. (NetBox renders only
-    TabbedGroups itself as tabs, not a subclass.)
-    """
-    group = TabbedGroups(*fieldsets)
-    group.id = tabs_id
-    return group
+    template_name = 'netbox_calendar/widgets/toggle_buttons.html'
 
 
 class NextTimesWidget(forms.Widget):
@@ -634,8 +615,8 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         help_text=_("Empty: the type's default duration. All-day events: the last day."),
     )
     end_by = forms.ChoiceField(
-        choices=((LENGTH, LENGTH), (END, END)), required=False,
-        widget=TabChoiceInput({'length': LENGTH, 'end': END}),
+        choices=((LENGTH, _('Length')), (END, _('End date'))), required=False, label=_('End by'),
+        widget=ToggleButtons(),
     )
     # Ticking All day redraws the When section, with dates instead of dates and times.
     all_day = forms.BooleanField(
@@ -667,8 +648,8 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
     )
     # Repeating stops on a date or after a number of times, on two tabs.
     repeat_end_by = forms.ChoiceField(
-        choices=((UNTIL, UNTIL), (COUNT, COUNT)), required=False,
-        widget=TabChoiceInput({'repeat_until': UNTIL, 'repeat_count': COUNT}),
+        choices=((UNTIL, _('Until a day')), (COUNT, _('Number of times'))), required=False, label=_('Ends'),
+        widget=ToggleButtons(),
     )
     repeat_next = forms.CharField(required=False, label=_('Next'), widget=NextTimesWidget())
     reminder_source = forms.ChoiceField(
@@ -755,13 +736,15 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
             if 'length' not in self.initial:
                 self.initial['length'] = format_length(int((instance.end - instance.start).total_seconds() // 60))
 
-        # Redrawn by HTMX (the When section's hidden tab value is sent along): an
-        # unticked All day sends nothing, so it is off rather than the stored value.
+        # Redrawn by HTMX (the When section's End by is sent along): an unticked
+        # All day sends nothing, so it is off rather than the stored value.
         if not self.is_bound and 'end_by' in self.initial and 'all_day' not in self.initial:
             self.initial['all_day'] = False
-        # An end given in the address (and no length) opens the "End date" tab.
+        # An end given in the address (and no length) is used as it is.
         if not self.is_bound and self.initial.get('end') and not self.initial.get('length'):
             self.initial.setdefault('end_by', END)
+        if not self.is_bound:
+            self.initial.setdefault('end_by', LENGTH)
 
         # All day: the start and end are picked as dates.
         if self.all_day_value():
@@ -770,6 +753,8 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
                 value = self.initial.get(name)
                 if isinstance(value, str) and len(value) > 10:
                     self.initial[name] = value[:10]
+        # Only the field End by uses: a length or an end date.
+        self.fields.pop('end' if self.end_by_value() == LENGTH else 'length')
 
         # Reminders: from the event type, picked for this event, or none.
         reminders = instance.reminders
@@ -794,8 +779,13 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         }.get(repeat, ('rrule',) if repeat == recurrence.WEEKLY else ('rrule', 'repeat_weekdays'))
         for name in unused:
             self.fields.pop(name, None)
-        # repeat_end_by stays: hidden fields are drawn outside the When section, so
-        # one dropped here would be missing once a repeat is picked and the section redrawn.
+        # Ends: until a day or after a number of times; only the field in use.
+        if 'repeat_until' in self.fields:
+            if not self.is_bound and 'repeat_end_by' not in self.initial:
+                self.initial['repeat_end_by'] = COUNT if self.initial.get('repeat_count') else UNTIL
+            self.fields.pop('repeat_count' if get_field_value(self, 'repeat_end_by') != COUNT else 'repeat_until')
+        else:
+            self.fields.pop('repeat_end_by')
         if repeat == recurrence.NONE:
             self.fields.pop('repeat_next')
         else:
@@ -823,24 +813,22 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
 
     def when_fieldset(self):
         """
-        The When section: the start, its end as a length or an end date (tabs),
-        then how it repeats with the fields that kind of repeat uses, ending
-        on a date or after a number of times (tabs). Changing the repeat
-        re-renders the section (HTMX).
+        The When section: the start, all day, its end as a length or an end
+        date (End by), then how it repeats with the fields that kind of repeat
+        uses, ending on a day or after a number of times (Ends), and the next
+        times. Changing All day, End by, Repeat or Ends redraws the section
+        (HTMX).
         """
-        items = [
-            'start',
-            'all_day',
-            tabs('nbcal_end_tabs', FieldSet('length', name=_('Length')), FieldSet('end', name=_('End date'))),
-        ]
-        items += [name for name in ('repeat', 'repeat_interval', 'repeat_weekdays', 'rrule') if name in self.fields]
-        if 'repeat_until' in self.fields:
-            items.append(tabs(
-                'nbcal_repeat_tabs', FieldSet('repeat_until', name=_('Until')), FieldSet('repeat_count', name=_('Times')),
-            ))
-        if 'repeat_next' in self.fields:
-            items.append('repeat_next')
-        return FieldSet(*items, name=_('When'), html_id='when_fields')
+        names = (
+            'start', 'all_day', 'end_by', 'length', 'end', 'repeat', 'repeat_interval', 'repeat_weekdays', 'rrule',
+            'repeat_end_by', 'repeat_until', 'repeat_count', 'repeat_next',
+        )
+        return FieldSet(*(name for name in names if name in self.fields), name=_('When'), html_id='when_fields')
+
+    def end_by_value(self):
+        if self.is_bound:
+            return self.data.get('end_by') or (LENGTH if self.data.get('length') else END)
+        return get_field_value(self, 'end_by') or LENGTH
 
     def all_day_value(self):
         value = get_field_value(self, 'all_day')

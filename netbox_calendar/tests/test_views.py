@@ -72,7 +72,7 @@ class PageTests(TestCase):
         self.assertEqual(event.links.get().object, self.device)
         self.assertTrue(EventPerson.objects.filter(event=event, user=engineer, role=role).exists())
 
-    def test_end_by_length_or_end_date_and_repeat_tabs(self):
+    def test_end_by_length_or_end_date_and_repeat_ends(self):
         start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
         data = {
             'title': 'Firmware upgrade', 'event_type': EventType.objects.get(slug='upgrade').pk,
@@ -80,7 +80,7 @@ class PageTests(TestCase):
             'length': '1h 30m', 'end': (start + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S'),
             'repeat': 'weekly', 'repeat_interval': 1, 'repeat_until': '2030-01-01', 'repeat_count': 4,
         }
-        # The open tabs decide: the length, and the number of times.
+        # End by and Ends decide: the length, and the number of times.
         response = self.client.post(url('event_add'), {**data, 'end_by': 'length', 'repeat_end_by': 'count'})
         self.assertEqual(response.status_code, 302)
         event = Event.objects.get(title='Firmware upgrade')
@@ -90,7 +90,7 @@ class PageTests(TestCase):
         # The edit form opens with the length filled in.
         self.assertEqual(self.client.get(url('event_edit', event.pk)).context['form'].initial['length'], '1h 30m')
 
-        # The other tabs: the end date, and the last day.
+        # The others: the end date, and the last day.
         response = self.client.post(url('event_edit', event.pk), {**data, 'end_by': 'end', 'repeat_end_by': 'until'})
         self.assertEqual(response.status_code, 302)
         event.refresh_from_db()
@@ -110,10 +110,14 @@ class PageTests(TestCase):
         self.assertContains(self.client.get(url('event_add')), 'data-first-weekday="1"')
 
     def test_when_section_tabs_all_day_and_next_times(self):
-        # The tabs have fixed ids; NetBox's random ones can start with a digit, which breaks the buttons.
+        # End by: only the field in use is shown, Length to begin with.
         page = self.client.get(url('event_add'))
-        self.assertContains(page, 'data-bs-target="#nbcal_end_tabs_2"')
+        self.assertIn('length', page.context['form'].fields)
+        self.assertNotIn('end', page.context['form'].fields)
         self.assertNotContains(page, 'id="repeat_next"')
+        page = self.client.get(url('event_add'), {'end_by': 'end'})
+        self.assertNotIn('length', page.context['form'].fields)
+        self.assertIn('end', page.context['form'].fields)
 
         # A repeat lists its next times, as the form is filled in.
         start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
@@ -122,6 +126,11 @@ class PageTests(TestCase):
         self.assertContains(page, 'id="repeat_next"')
         for days in (0, 2, 4):
             self.assertContains(page, (start + timedelta(days=days)).strftime('%Y-%m-%d 10:00'))
+        # Ends: until a day to begin with, or a number of times, which the next times follow.
+        self.assertNotIn('repeat_count', page.context['form'].fields)
+        page = self.client.get(url('event_add'), {**query, 'repeat_end_by': 'count', 'repeat_count': 2})
+        self.assertNotIn('repeat_until', page.context['form'].fields)
+        self.assertNotContains(page, (start + timedelta(days=4)).strftime('%Y-%m-%d 10:00'))
 
         # All day: the start is picked as a date, and the next times are days.
         page = self.client.get(url('event_add'), {**query, 'all_day': 'on'})

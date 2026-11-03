@@ -4,28 +4,12 @@ set up once per page; it runs again after HTMX swaps part of a form.
 - Date pickers: NetBox's flatpickr starts weeks on Sunday and is not set up
   again after HTMX swaps. This sets them up with the calendar's first
   weekday and shades Saturdays and Sundays.
-- Tabs (TabbedGroups): shown as tabs joined to the field under them, and
-  the open tab is kept in a hidden field (TabChoiceInput) so the form knows
-  which value to use. Switching tabs counts as a change of the form (the
-  next times of a repeat are worked out again).
 {% endcomment %}
 <style>
   .flatpickr-day.nbcal-weekend:not(.selected):not(.startRange):not(.endRange):not(.inRange):not(:hover) {
     background-color: rgba(0, 0, 0, .07);
   }
   .flatpickr-weekday.nbcal-weekend { opacity: .65; }
-  /* Tabs joined to the field: the open tab takes the field's colours and covers its top border. */
-  .nav-tabs.nbcal-tabs { border-bottom: 0; margin-bottom: 0 !important; }
-  .nav-tabs.nbcal-tabs .nav-link {
-    padding: .3rem .9rem; border-bottom: 0;
-    border-bottom-left-radius: 0; border-bottom-right-radius: 0;
-  }
-  .nav-tabs.nbcal-tabs .nav-link.active {
-    position: relative; z-index: 3; margin-bottom: -1px;
-    background-color: var(--nbcal-tab-bg); border-color: var(--nbcal-tab-border);
-    border-bottom: 1px solid var(--nbcal-tab-bg);
-  }
-  .nbcal-tab-pane .form-control { border-top-left-radius: 0; }
 </style>
 <script>
 (function () {
@@ -59,43 +43,8 @@ set up once per page; it runs again after HTMX swaps part of a form.
     }
   }
 
-  function setupTabs(choice) {
-    var tabs = JSON.parse(choice.dataset.nbcalTabs);
-    Object.keys(tabs).forEach(function (fieldId) {
-      var field = document.getElementById(fieldId);
-      var pane = field && field.closest('.tab-pane');
-      var button = pane && document.querySelector('[data-bs-target="#' + pane.id + '"]');
-      if (!button) { return; }
-      var nav = button.closest('.nav');
-      nav.classList.replace('nav-pills', 'nav-tabs');
-      nav.classList.add('nbcal-tabs');
-      pane.classList.add('nbcal-tab-pane');
-      if (field.offsetParent) {
-        // The open tab takes the colours of the field it sits on.
-        var style = getComputedStyle(field);
-        nav.style.setProperty('--nbcal-tab-bg', style.backgroundColor);
-        nav.style.setProperty('--nbcal-tab-border', style.borderTopColor);
-      }
-      if (!button.nbcalTab) {
-        button.nbcalTab = true;
-        button.addEventListener('shown.bs.tab', function () {
-          choice.value = tabs[fieldId];
-          // The hidden value sits outside the section; tell the section from the tab's pane.
-          pane.dispatchEvent(new Event('change', {bubbles: true}));
-        });
-      }
-      if (!choice.value && pane.classList.contains('active')) {
-        choice.value = tabs[fieldId];
-      } else if (choice.value === tabs[fieldId] && !button.classList.contains('active')) {
-        // Reopen the tab that was open before the form was shown again.
-        button.click();
-      }
-    });
-  }
-
   function setup() {
     document.querySelectorAll('input[data-first-weekday]').forEach(setupPicker);
-    document.querySelectorAll('input[data-nbcal-tabs]').forEach(setupTabs);
   }
 
   window.nbcalForm = {setup: setup};
