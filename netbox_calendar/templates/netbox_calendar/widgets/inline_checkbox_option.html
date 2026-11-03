@@ -1,0 +1,5 @@
+{# One tick box. Written out here: NetBox's input template would add "form-control". #}
+<div class="form-check form-check-inline">
+  <input type="checkbox" name="{{ widget.name }}" value="{{ widget.value|stringformat:'s' }}"{% include "django/forms/widgets/attrs.html" %} class="form-check-input">
+  <label class="form-check-label" for="{{ widget.attrs.id }}">{{ widget.label }}</label>
+</div>

@@ -108,9 +108,13 @@ class PageTests(TestCase):
         self.assertEqual(event_type.reminders, [4320, 1440, 60, 45])
 
         # The edit form ticks the common times and lists the rest as text.
-        form = self.client.get(url('eventtype_edit', event_type.pk)).context['form']
+        page = self.client.get(url('eventtype_edit', event_type.pk))
+        form = page.context['form']
         self.assertEqual(form.initial['reminder_presets'], ['1440', '60'])
         self.assertEqual(form.initial['reminder_other'], '3d, 45m')
+        # Drawn as Bootstrap checkboxes, not bare inputs.
+        self.assertContains(page, 'class="form-check form-check-inline"')
+        self.assertContains(page, 'class="form-check-input"')
 
         # An event with its own reminders opens with them picked.
         self.event.reminders = [15]
