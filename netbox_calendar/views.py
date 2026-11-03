@@ -528,8 +528,12 @@ class FeedView(View):
         # Single events from the last 90 days on; repeating series whole.
         since = timezone.now() - timedelta(days=90)
         queryset = queryset.filter(Q(end__gte=since) | ~Q(rrule='')).select_related('event_type')
-        text = ical.calendar(queryset, name=_('NetBox events'), describe=_describe)
-        return HttpResponse(text, content_type='text/calendar; charset=utf-8')
+        text = ical.calendar(queryset, name=_('NetBox events'), describe=_describe, refresh='PT1H')
+        response = HttpResponse(text, content_type='text/calendar; charset=utf-8')
+        # Shown inline, never cached by proxies: the feed is personal.
+        response['Content-Disposition'] = 'inline; filename="netbox-events.ics"'
+        response['Cache-Control'] = 'private, no-cache'
+        return response
 
 
 #

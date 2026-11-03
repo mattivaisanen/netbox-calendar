@@ -196,6 +196,24 @@ rather than deleting it, so people are told; deleting notifies nobody.
 Calendar apps refresh subscriptions on their own schedule, often every few
 hours.
 
+### When Outlook says "We can't add the calendar"
+
+Outlook on the web, the new Outlook, Outlook mobile and Google Calendar
+download the feed from their own internet servers, not from your computer.
+The error (often with an empty calendar name) means those servers could not
+download the feed. Check that:
+
+- the feed address opens from outside your network, for example on a phone
+  with Wi-Fi off;
+- it uses `https://` with a certificate from a public CA, not an internal one;
+- no proxy, VPN gateway or single sign-on page sits in front of it;
+- the *NetBox address* setting (`netbox_url`) is the public address, so the
+  feed page shows that address.
+
+Classic Outlook for Windows and Apple Calendar download the feed from your
+computer, so an internal address works there. If NetBox must stay internal,
+use one of those, or the per-event `.ics` download.
+
 ## Change requests from netbox-change-approval
 
 If netbox-change-approval is installed, its approved change requests with an

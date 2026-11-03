@@ -36,7 +36,8 @@ class ICalTests(TestCase):
         self.assertTrue(text.endswith('END:VCALENDAR\r\n'))
         lines = unfold(text).split('\r\n')
         for expected in (
-            'BEGIN:VTIMEZONE', 'TZID:Europe/Helsinki',
+            'NAME:NetBox', 'X-WR-CALNAME:NetBox',
+            'BEGIN:VTIMEZONE', 'TZID:Europe/Helsinki', 'DTSTART:19700329T030000',
             'DTSTART;TZID=Europe/Helsinki:20260407T090000',
             'DTEND;TZID=Europe/Helsinki:20260407T110000',
             'RRULE:FREQ=WEEKLY;COUNT=4',

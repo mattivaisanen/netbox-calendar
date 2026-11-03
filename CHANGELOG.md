@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Upcoming Events widget: the start time now sits on the same line as the event title.
 - The event form has one picker per kind of object (devices, sites, device
   roles, ...) and shows what is already linked when editing. Removing an
   object from a picker unlinks it.
@@ -9,6 +10,14 @@
   covers its devices, like sites and locations already did.
 - The event page lists every affected device.
 - Unlinking an object from the event page asks to confirm first.
+
+## 0.1.1 (2026-11-03)
+
+- iCal feed: time zone rules start in 1970 so they cover events of every
+  year, a standard `NAME` next to `X-WR-CALNAME`, a one-hour refresh hint,
+  and the feed is served inline and not cached by proxies.
+- Calendar Feed page and usage docs explain why Outlook on the web can fail
+  to subscribe to a NetBox that is only reachable internally.
 
 ## 0.1.0 (2026-11-03)
 
