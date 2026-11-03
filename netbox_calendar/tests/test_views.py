@@ -1,11 +1,8 @@
 from datetime import timedelta
 
-from django.contrib.contenttypes.models import ContentType
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 from django.utils import timezone
-
-from dcim.models import Device
 
 from .. import plugin_settings
 from ..models import Event, EventPerson, EventRole, EventType, FeedToken
@@ -60,8 +57,7 @@ class PageTests(TestCase):
             'start': start.strftime('%Y-%m-%d %H:%M:%S'),
             'repeat': 'monthly_weekday',
             'repeat_interval': 1,
-            'link_type': ContentType.objects.get_for_model(Device).pk,
-            'link_objects': [self.device.pk],
+            'link_devices': [self.device.pk],
             'people_role': role.pk,
             'people_users': [engineer.pk],
         })
@@ -72,6 +68,29 @@ class PageTests(TestCase):
         self.assertTrue(event.rrule.startswith('FREQ=MONTHLY;BYDAY='))
         self.assertEqual(event.links.get().object, self.device)
         self.assertTrue(EventPerson.objects.filter(event=event, user=engineer, role=role).exists())
+
+    def test_edit_keeps_links_and_lists_role_devices(self):
+        # The edit form shows the linked device, so saving it unchanged keeps the link.
+        form = self.client.get(url('event_edit', self.event.pk)).context['form']
+        self.assertEqual(list(form.initial['link_devices']), [self.device.pk])
+
+        # Swap the device for its role: the role's devices are then listed as affected.
+        second = make_device('edge-2')
+        response = self.client.post(url('event_edit', self.event.pk), {
+            'title': self.event.title, 'event_type': self.event.event_type.pk, 'status': 'planned',
+            'impact': 'none', 'start': timezone.localtime(self.event.start).strftime('%Y-%m-%d %H:%M:%S'),
+            'repeat': 'weekly', 'repeat_interval': 1, 'link_device_roles': [self.device.role.pk],
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.event.links.get().object, self.device.role)
+        page = self.client.get(url('event', self.event.pk))
+        self.assertEqual(page.context['devices_total'], 2)
+        self.assertContains(page, second.name)
+
+        # Unlinking asks first.
+        link = self.event.links.get()
+        self.assertEqual(self.client.get(url('event_unlink', self.event.pk, link.pk)).status_code, 200)
+        self.assertTrue(self.event.links.exists())
 
     def test_reminders_from_tick_boxes_and_text(self):
         event_type = EventType.objects.get(slug='upgrade')

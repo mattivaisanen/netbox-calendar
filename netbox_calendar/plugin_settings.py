@@ -95,7 +95,8 @@ SETTINGS = (
     ),
     Setting(
         'scope_rollup', _('Scope roll-up'),
-        _('Events on a site, location, rack or cluster also show on the devices and virtual machines in it.'),
+        _('Events on a site, region, location, rack, cluster, device role, device type, platform or tenant also '
+          'concern its devices and virtual machines.'),
         KIND_BOOL,
     ),
     Setting(

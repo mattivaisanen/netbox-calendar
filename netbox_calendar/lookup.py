@@ -3,8 +3,10 @@ Which objects an event is about, and which events are about an object.
 
 An event is about the objects linked to it (EventObject), the objects its
 filter matches ("every device with role core"), and, with the scope_rollup
-setting, everything inside a linked site, location, rack or cluster: an
-event on a site shows on its devices.
+setting, everything a linked site, region, location, rack, cluster, device
+role, device type, platform or tenant covers: an event on a site or on a
+device role concerns its devices. scopes() and affected_devices() are the
+two directions of the same rule.
 """
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
@@ -102,20 +104,29 @@ def _site_scopes(site):
     return [site] + _with_ancestors(site.region) + _with_ancestors(site.group)
 
 
+def _kind_scopes(obj):
+    """What kind of device or VM `obj` is: role, platform (with their parents) and tenant."""
+    return _with_ancestors(obj.role) + _with_ancestors(obj.platform) + [obj.tenant]
+
+
 def scopes(obj):
     """
     The objects whose events also concern `obj`: itself and, with the
     scope_rollup setting, where it sits (site, region, site group,
-    location, rack, cluster, host device). Components (interfaces, ports)
-    take their device's.
+    location, rack, cluster, host device) and what it is (role, type,
+    manufacturer, platform, tenant). Components (interfaces, ports) take
+    their device's.
     """
     if not get_setting('scope_rollup', True):
         return [obj]
     label = obj._meta.label_lower
     if label == 'dcim.device':
-        around = _site_scopes(obj.site) + _with_ancestors(obj.location) + [obj.rack, obj.cluster]
+        around = (
+            _site_scopes(obj.site) + _with_ancestors(obj.location) + [obj.rack, obj.cluster]
+            + _kind_scopes(obj) + [obj.device_type, obj.device_type.manufacturer]
+        )
     elif label == 'virtualization.virtualmachine':
-        around = _site_scopes(obj.site) + [obj.cluster, obj.device]
+        around = _site_scopes(obj.site) + [obj.cluster, obj.device] + _kind_scopes(obj)
     elif label == 'dcim.rack':
         around = _site_scopes(obj.site) + _with_ancestors(obj.location)
     elif label == 'dcim.location':
@@ -130,6 +141,62 @@ def scopes(obj):
     else:
         around = []
     return [obj] + [scope for scope in around if scope is not None]
+
+
+def _tree(obj):
+    """`obj` and everything under it (sub-regions, child locations, ...)."""
+    try:
+        return obj.get_descendants(include_self=True)
+    except AttributeError:
+        return [obj]
+
+
+#: How a link to each kind of object picks devices, with the scope_rollup
+#: setting. The reverse of scopes().
+DEVICE_MATCHES = {
+    'dcim.devicerole': lambda obj: Q(role__in=_tree(obj)),
+    'dcim.devicetype': lambda obj: Q(device_type=obj),
+    'dcim.manufacturer': lambda obj: Q(device_type__manufacturer=obj),
+    'dcim.platform': lambda obj: Q(platform__in=_tree(obj)),
+    'dcim.site': lambda obj: Q(site=obj),
+    'dcim.region': lambda obj: Q(site__region__in=_tree(obj)),
+    'dcim.sitegroup': lambda obj: Q(site__group__in=_tree(obj)),
+    'dcim.location': lambda obj: Q(location__in=_tree(obj)),
+    'dcim.rack': lambda obj: Q(rack=obj),
+    'virtualization.cluster': lambda obj: Q(cluster=obj),
+    'tenancy.tenant': lambda obj: Q(tenant=obj),
+}
+
+
+def affected_devices(event):
+    """
+    Every device the event concerns, as a queryset: devices linked
+    directly or through a component (an interface), devices its filter
+    matches, and, with the scope_rollup setting, the devices of a linked
+    site, role, type and so on (DEVICE_MATCHES).
+    """
+    from dcim.models import Device  # NetBox's own app: always installed.
+
+    rollup = get_setting('scope_rollup', True)
+    condition = Q()
+    for link in event.links.select_related('object_type'):
+        obj = link.object
+        if obj is None:
+            continue
+        label = obj._meta.label_lower
+        if label == 'dcim.device':
+            condition |= Q(pk=obj.pk)
+        elif label in DEVICE_MATCHES:
+            if rollup:
+                condition |= DEVICE_MATCHES[label](obj)
+        elif isinstance(getattr(obj, 'device', None), Device):
+            # A component (interface, port, ...): its device.
+            condition |= Q(pk=obj.device.pk)
+    if event.filter_object_type_id and event.filter_object_type.model_class() is Device:
+        condition |= Q(pk__in=filtered_objects(event).values('pk'))
+    if not condition:
+        return Device.objects.none()
+    return Device.objects.filter(condition).distinct()
 
 
 def events_for_object(obj, queryset):

@@ -15,7 +15,7 @@ class NetBoxCalendarConfig(PluginConfig):
         'Schedule upgrades, downtime, maintenance and other events on NetBox objects, '
         'with calendar views, reminders and an iCal feed.'
     )
-    version = '0.1.0'
+    version = '0.1.1'
     author = 'Matti'
     base_url = 'calendar'
     # The oldest NetBox release the tests run on.

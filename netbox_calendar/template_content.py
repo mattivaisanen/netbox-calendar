@@ -17,7 +17,7 @@ from django.utils import timezone
 from netbox.plugins import PluginTemplateExtension
 
 from . import agenda
-from .forms import linkable_types
+from .forms import link_field_for, linkable_types
 from .lookup import events_for_object
 from .models import Event
 from .plugin_settings import on
@@ -39,9 +39,18 @@ def _linkable(model):
     return linkable_types().filter(pk=ContentType.objects.get_for_model(model).pk).exists()
 
 
+def pick_param(content_type):
+    """The add-event form's field for objects of this type: its own picker, or "Other objects"."""
+    return link_field_for(content_type) or 'link_objects'
+
+
 def schedule_url(content_type, pks):
     """The add-event form with these objects ready to link."""
-    query = '&'.join([f'link_type={content_type.pk}'] + [f'link_objects={pk}' for pk in pks])
+    param = pick_param(content_type)
+    query = [f'{param}={pk}' for pk in pks]
+    if param == 'link_objects':
+        query.insert(0, f'link_type={content_type.pk}')
+    query = '&'.join(query)
     return f"{reverse('plugins:netbox_calendar:event_add')}?{query}"
 
 
@@ -129,6 +138,7 @@ class ScheduleSelected(PluginTemplateExtension):
         content_type = ContentType.objects.get_for_model(model)
         return self.render('netbox_calendar/inc/schedule_button.html', extra_context={
             'add_url': schedule_url(content_type, []),
+            'pick_param': pick_param(content_type),
         })
 
 

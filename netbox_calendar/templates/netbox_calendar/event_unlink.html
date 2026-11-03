@@ -1,0 +1,29 @@
+{% extends 'generic/_base.html' %}
+{% load helpers %}
+{% load i18n %}
+
+{% block title %}{% blocktrans with event=object %}Unlink from {{ event }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+{# Asked before an object is unlinked from the event page. #}
+<div class="row mt-3">
+  <div class="col col-md-6 offset-md-3">
+    <div class="card border-danger">
+      <h2 class="card-header">{% trans "Unlink Object" %}</h2>
+      <div class="card-body">
+        <p>
+          {% blocktrans with type=link.object_type.name|bettertitle object=link.object_repr event=object %}Unlink {{ type }} <strong>{{ object }}</strong> from <strong>{{ event }}</strong>?{% endblocktrans %}
+        </p>
+        <p class="text-secondary small mb-0">{% trans "The object itself is not changed. It can be linked again later." %}</p>
+      </div>
+      <div class="card-footer text-end">
+        <form method="post">
+          {% csrf_token %}
+          <a href="{{ object.get_absolute_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+          <button type="submit" class="btn btn-danger"><i class="mdi mdi-link-variant-off"></i> {% trans "Unlink" %}</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -108,7 +108,7 @@
   <div class="col col-md-6">
     <div class="card">
       <h2 class="card-header d-flex justify-content-between align-items-center">
-        <span>{% trans "Objects" %} <span class="badge text-bg-secondary">{{ objects_total }}</span></span>
+        <span>{% trans "Linked Objects" %} <span class="badge text-bg-secondary">{{ objects_total }}</span></span>
         {% if can_edit %}
           <a href="{% url 'plugins:netbox_calendar:event_link' pk=object.pk %}" class="btn btn-sm btn-primary">
             <i class="mdi mdi-link-variant-plus"></i> {% trans "Link Objects" %}
@@ -122,10 +122,8 @@
             <td>{% if link.object %}{{ link.object|linkify }}{% else %}<s>{{ link.object_repr }}</s> <span class="small text-secondary">({% trans "deleted" %})</span>{% endif %}</td>
             <td class="text-end">
               {% if can_edit %}
-                <form method="post" action="{% url 'plugins:netbox_calendar:event_unlink' pk=object.pk link_pk=link.pk %}" class="d-inline">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-sm btn-outline-danger" title="{% trans 'Unlink' %}"><i class="mdi mdi-link-variant-off"></i></button>
-                </form>
+                {# Opens a confirmation page; nothing is removed until it is confirmed. #}
+                <a href="{% url 'plugins:netbox_calendar:event_unlink' pk=object.pk link_pk=link.pk %}" class="btn btn-sm btn-outline-danger" title="{% trans 'Unlink' %}"><i class="mdi mdi-link-variant-off"></i></a>
               {% endif %}
             </td>
           </tr>
@@ -141,6 +139,32 @@
         {% endif %}
         {% if not object.links.all and not object.filter_object_type %}
           <tr><td class="text-secondary">{% trans "No objects linked." %}</td></tr>
+        {% endif %}
+      </table>
+    </div>
+    <div class="card">
+      {# Every device the event concerns: linked ones and those of linked sites, roles, types and so on. #}
+      <h2 class="card-header">
+        {% trans "Affected Devices" %} <span class="badge text-bg-secondary">{{ devices_total }}</span>
+      </h2>
+      <table class="table table-hover">
+        {% if devices %}
+          <thead>
+            <tr><th>{% trans "Device" %}</th><th>{% trans "Site" %}</th><th>{% trans "Role" %}</th><th>{% trans "Status" %}</th></tr>
+          </thead>
+        {% endif %}
+        {% for device in devices %}
+          <tr>
+            <td>{{ device|linkify }}</td>
+            <td>{{ device.site|linkify }}</td>
+            <td>{% badge device.role hex_color=device.role.color %}</td>
+            <td>{% badge device.get_status_display bg_color=device.get_status_color %}</td>
+          </tr>
+        {% empty %}
+          <tr><td class="text-secondary">{% trans "No devices." %}</td></tr>
+        {% endfor %}
+        {% if devices_more %}
+          <tr><td colspan="4" class="text-secondary small">{% blocktrans count count=devices_more %}and {{ count }} more device{% plural %}and {{ count }} more devices{% endblocktrans %}</td></tr>
         {% endif %}
       </table>
     </div>
