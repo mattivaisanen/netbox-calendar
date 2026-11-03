@@ -3,6 +3,13 @@
 ## Unreleased
 
 - Upcoming Events widget: the start time now sits on the same line as the event title.
+- The event form has one picker per kind of object (devices, sites, device
+  roles, ...) and shows what is already linked when editing. Removing an
+  object from a picker unlinks it.
+- Linking a device role, device type, manufacturer, platform or tenant
+  covers its devices, like sites and locations already did.
+- The event page lists every affected device.
+- Unlinking an object from the event page asks to confirm first.
 
 ## 0.1.1 (2026-11-03)
 
