@@ -8,7 +8,7 @@ setting except `reminder_grace_minutes` on **Calendar → Settings**; see
 | Key | Default | Description |
 |---|---|---|
 | `notifications` | `True` | NetBox notifications (the bell) about events. `False` sends none; Event Rules still run. |
-| `direct_email` | `False` | E-mail notices through NetBox's `EMAIL` settings, with a calendar invite attached, for event types with **Send e-mail** on. See [notifications.md](notifications.md#direct-e-mail). |
+| `direct_email` | `False` | E-mail notices through NetBox's `EMAIL` settings, with a calendar invite attached. **Each event type also needs Send e-mail on.** See [notifications.md](notifications.md#direct-e-mail). |
 | `ical_feeds` | `True` | Personal calendar feed addresses. `False` makes every feed address return "not found". |
 | `restrict_editing` | `True` | Only the owner, people in a role that can edit, superusers and users with the `manage` action may change an event. `False`: NetBox permissions only. See [usage.md](usage.md#who-can-edit-an-event). |
 | `conflict_warnings` | `True` | Warn on the event page when another event overlaps on the same object. |
@@ -18,7 +18,9 @@ setting except `reminder_grace_minutes` on **Calendar → Settings**; see
 | `auto_status` | `True` | Single events move to *In progress* at their start and *Done* at their end. |
 | `first_weekday` | `0` | First column of the month view: `0` Monday ... `6` Sunday. |
 | `netbox_url` | `''` | NetBox's address as users reach it, such as `https://netbox.corp.internal`. Gives full links in notices, e-mails and the iCal feed. Empty: links are paths only, and feed addresses use the address of the browser that opened the feed page. |
-| `message` | see [notifications.md](notifications.md#the-message) | Jinja2 template of the notice text: `{{ data.message }}` for webhooks and the body of direct e-mail. |
+| `message` | see [notifications.md](notifications.md#the-message) | Jinja2 template of the notice text: `{{ data.message }}` for webhooks. |
+| `email_subject` | see [notifications.md](notifications.md#e-mail-subject-and-body) | Jinja2 template of the direct e-mail subject. |
+| `email_body` | see [notifications.md](notifications.md#e-mail-subject-and-body) | Jinja2 template of the direct e-mail body (plain text). |
 | `reminder_grace_minutes` | `60` | How late a reminder, start or end notice may still be sent, for example after the worker was down. Older ones are dropped. Only in `configuration.py`. |
 
 Example:

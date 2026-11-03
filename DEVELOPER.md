@@ -28,7 +28,7 @@ events repeat, how notices are sent or who may edit.
 | `jobs.py` | The five-minute system job: automatic status, reminders, start and end notices, each sent once (`SentNotice`). |
 | `event_types.py` | The plugin's NetBox event types, registered on import (before NetBox builds the Event Rule form). |
 | `notifications.py` | Recipients, the event data, and the three channels: bell, Event Rules, direct e-mail. |
-| `message_template.py` | The Jinja2 notice text, rendered in a sandbox. |
+| `message_template.py` | The Jinja2 templates of the webhook message and the e-mail subject and body, rendered in a sandbox. |
 | `ical.py` | RFC 5545 output: feed, `.ics` download and e-mail invites, with a generated `VTIMEZONE`. |
 | `plugin_settings.py` | Settings superusers change in NetBox, layered over `configuration.py`. |
 | `integrations.py` | netbox-change-approval's scheduled change requests on the calendar. |
