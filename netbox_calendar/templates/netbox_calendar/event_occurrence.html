@@ -1,0 +1,22 @@
+{% extends 'generic/_base.html' %}
+{% load form_helpers %}
+{% load i18n %}
+
+{% block title %}{% blocktrans with event=object when=original_start|date:"D j M Y H:i" %}{{ event }}: occurrence of {{ when }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<form method="post" class="form-object-edit mt-3">
+  {% csrf_token %}
+  <div class="text-secondary mb-3">
+    {% trans "Skip or move only this occurrence; the rest of the series stays as it is. A reason is always needed." %}
+  </div>
+  {# The action picker reloads these fields: new times only show when moving. #}
+  <div id="form_fields" hx-disinherit="hx-select hx-swap">
+    {% render_form form %}
+  </div>
+  <div class="text-end my-3">
+    <a href="{{ object.get_absolute_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+    <button type="submit" class="btn btn-primary">{% trans "Save" %}</button>
+  </div>
+</form>
+{% endblock %}

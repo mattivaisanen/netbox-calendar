@@ -21,7 +21,7 @@ urlpatterns = [
         'events/<int:pk>/people/<int:person_pk>/delete/', views.EventPersonDeleteView.as_view(),
         name='event_person_delete',
     ),
-    path('events/<int:pk>/skip/', views.EventSkipView.as_view(), name='event_skip'),
+    path('events/<int:pk>/occurrence/', views.EventOccurrenceView.as_view(), name='event_occurrence'),
     path('events/<int:pk>/ics/', views.EventICSView.as_view(), name='event_ics'),
 
     path('event-types/', include(get_model_urls('netbox_calendar', 'eventtype', detail=False))),

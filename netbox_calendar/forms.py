@@ -27,7 +27,7 @@ from utilities.forms.widgets import DatePicker, DateTimePicker, HTMXSelect
 from . import plugin_settings, recurrence
 from .choices import EventStatusChoices, ImpactChoices, NoticeChoices
 from .lookup import DEVICE_MATCHES, EXCLUDABLE
-from .models import Event, EventObject, EventPerson, EventRole, EventType, display_name
+from .models import Event, EventObject, EventPerson, EventRole, EventType, OccurrenceChange, display_name
 
 User = get_user_model()
 
@@ -795,6 +795,102 @@ class EventPersonForm(forms.ModelForm):
     class Meta:
         model = EventPerson
         fields = ('role', 'user', 'group', 'contact')
+
+
+class OccurrenceForm(forms.Form):
+    """
+    Skip, move or bring back one occurrence of a repeating event. Every
+    choice needs a reason; it is kept on the change, in the event's journal
+    and in the notice. For an all-day event the times are days.
+    """
+    SKIP, MOVE, RESTORE = 'skip', 'move', 'restore'
+
+    occurrence = forms.CharField(widget=forms.HiddenInput)
+    action = forms.ChoiceField(label=_('Action'), widget=HTMXSelect())
+    start = forms.DateTimeField(label=_('New start'), required=False, widget=DateTimePicker())
+    end = forms.DateTimeField(label=_('New end'), required=False, widget=DateTimePicker())
+    reason = forms.CharField(
+        label=_('Reason'), max_length=200,
+        help_text=_('Why. Shown on the event, in its journal and in the notice people get.'),
+    )
+
+    def __init__(self, event, original_start, *args, **kwargs):
+        self.event = event
+        self.original_start = original_start
+        self.change = OccurrenceChange.objects.filter(event=event, original_start=original_start).first()
+        if self.change is not None:
+            # For the change log: the change as it was before this form.
+            self.change.snapshot()
+        super().__init__(*args, **kwargs)
+
+        choices = [(self.SKIP, _('Skip this occurrence')), (self.MOVE, _('Move this occurrence'))]
+        if self.change is not None:
+            choices.append((self.RESTORE, _('Bring back to the original time')))
+        self.fields['action'].choices = choices
+        if event.all_day:
+            self.fields['start'] = forms.DateField(label=_('New first day'), required=False, widget=DatePicker())
+            self.fields['end'] = forms.DateField(label=_('New last day'), required=False, widget=DatePicker())
+
+        if not self.is_bound:
+            # Open with the occurrence as it is now.
+            change = self.change
+            start = change.start if change is not None and change.is_moved else original_start
+            end = change.end if change is not None and change.is_moved else original_start + event.duration
+            if event.all_day:
+                start, end = timezone.localtime(start).date(), timezone.localtime(end - timedelta(seconds=1)).date()
+            else:
+                start, end = timezone.localtime(start), timezone.localtime(end)
+            self.initial.setdefault('action', self.MOVE if change is not None and change.is_moved else self.SKIP)
+            self.initial.setdefault('start', start)
+            self.initial.setdefault('end', end)
+            self.initial.setdefault('reason', change.reason if change is not None else '')
+
+        # New times only matter when moving.
+        if get_field_value(self, 'action') != self.MOVE:
+            self.fields.pop('start')
+            self.fields.pop('end')
+
+    def _as_time(self, value):
+        if isinstance(value, datetime) or value is None:
+            return value
+        # A day of an all-day event; OccurrenceChange.clean() rounds it to midnights.
+        return timezone.make_aware(datetime.combine(value, time(12)), timezone.get_current_timezone())
+
+    def clean(self):
+        data = super().clean()
+        if data.get('action') == self.MOVE:
+            for name in ('start', 'end'):
+                if not data.get(name):
+                    self.add_error(name, _('Required to move the occurrence.'))
+        if self.errors or data.get('action') == self.RESTORE:
+            return data
+        change = self.change or OccurrenceChange(event=self.event, original_start=self.original_start)
+        change.reason = data['reason'].strip()
+        if data['action'] == self.MOVE:
+            change.start, change.end = self._as_time(data['start']), self._as_time(data['end'])
+        else:
+            change.start = change.end = None
+        try:
+            change.full_clean()
+        except ValidationError as error:
+            fields = {'start', 'end', 'reason'}
+            for field, messages in error.message_dict.items():
+                self.add_error(field if field in fields else None, messages)
+        self.cleaned_change = change
+        return data
+
+    def save(self):
+        """Store the choice. Returns the action taken."""
+        reason = self.cleaned_data['reason'].strip()
+        action = self.cleaned_data['action']
+        if action == self.RESTORE:
+            self.change._changelog_message = reason
+            self.change.delete()
+            return action
+        change = self.cleaned_change
+        change._changelog_message = reason
+        change.save()
+        return action
 
 
 class CalendarFilterForm(forms.Form):

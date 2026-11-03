@@ -89,7 +89,7 @@ def send_notices(now=None):
     ahead = timedelta(minutes=_longest_reminder())
     events = Event.objects.exclude(status=EventStatusChoices.CANCELLED).filter(
         Q(rrule__gt='') | Q(start__lte=now + ahead, end__gte=now - grace),
-    ).select_related('event_type', 'event_owner')
+    ).select_related('event_type', 'event_owner').prefetch_related('occurrence_changes')
     sent = 0
     for event in events:
         for occurrence in event.occurrences(now - grace, now + ahead + timedelta(minutes=1)):

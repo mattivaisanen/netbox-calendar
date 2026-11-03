@@ -2,12 +2,12 @@
 REST API: /api/plugins/calendar/. Changing events, their links and their
 people follows the same rule as the web pages (permissions.py).
 """
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from netbox.api.viewsets import NetBoxModelViewSet
 
 from .. import filtersets
-from ..models import Event, EventObject, EventPerson, EventRole, EventType
+from ..models import Event, EventObject, EventPerson, EventRole, EventType, OccurrenceChange
 from ..permissions import can_edit, editable
 from . import serializers
 
@@ -28,7 +28,7 @@ class EventRoleViewSet(NetBoxModelViewSet):
 
 class EventViewSet(NetBoxModelViewSet):
     queryset = Event.objects.select_related('event_type', 'event_owner', 'filter_object_type').prefetch_related(
-        'tags', 'links__object_type',
+        'tags', 'links__object_type', 'occurrence_changes',
     )
     serializer_class = serializers.EventSerializer
     filterset_class = filtersets.EventFilterSet
@@ -79,3 +79,15 @@ class EventPersonViewSet(EventPartViewSet):
     queryset = EventPerson.objects.select_related('event', 'role', 'user', 'group', 'contact')
     serializer_class = serializers.EventPersonSerializer
     filterset_fields = ('event', 'role', 'user', 'contact')
+
+
+class OccurrenceChangeViewSet(EventPartViewSet):
+    queryset = OccurrenceChange.objects.select_related('event')
+    serializer_class = serializers.OccurrenceChangeSerializer
+    filterset_fields = ('event',)
+
+    def perform_destroy(self, instance):
+        # Bringing an occurrence back needs a reason too.
+        if not (instance._changelog_message or '').strip():
+            raise ValidationError({'changelog_message': 'Give the reason for bringing the occurrence back.'})
+        super().perform_destroy(instance)

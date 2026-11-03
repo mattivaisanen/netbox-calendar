@@ -69,9 +69,23 @@ FREQ=WEEKLY;INTERVAL=2;BYDAY=SA,SU;UNTIL=20271231  every other weekend until the
 Occurrences keep their local time across daylight saving changes: an event
 at 22:00 stays at 22:00.
 
-The event page lists the next occurrences. **Skip** calls off one
-occurrence without touching the rest, and **Bring back** undoes it. Editing
-the event changes every occurrence.
+The event page lists the next occurrences. **Edit** on one of them opens
+a form to change only that occurrence:
+
+- **Skip this occurrence**: it does not happen.
+- **Move this occurrence**: it happens at the new start and end instead
+  (new days for an all-day event).
+- **Bring back to the original time**: undoes a skip or move.
+
+Each needs a reason. The reason shows under **Changed Occurrences** on the
+event page, as a journal entry on the event, as the message of its change
+log entry, and in the *Changed* notice people get. Calendar feeds and
+`.ics` downloads show a skipped occurrence as removed and a moved one at
+its new time.
+
+Editing the event changes every occurrence. If its start or recurrence
+changes so that a changed occurrence is no longer part of the series, that
+change stops applying and is marked on the event page.
 
 ## Objects
 
@@ -260,9 +274,11 @@ Under `/api/plugins/calendar/`:
 | `events/` | Events. Filters as on the event list, plus `after`, `before` (ISO times) and `object_type` + `object_id` (`?object_type=dcim.device&object_id=7`). A new event's owner is the API user unless `event_owner` is given. |
 | `event-objects/` | Links between events and objects (`event`, `object_type`, `object_id`). |
 | `event-people/` | People on events (`event`, `role`, and one of `user`, `group` or `contact`). |
+| `occurrence-changes/` | Skipped or moved occurrences (`event`, `original_start`, `start`, `end`, `reason`). No `start` and `end`: skipped. Deleting brings the occurrence back and needs a `changelog_message` as the reason. |
 | `event-types/`, `event-roles/` | Types and roles. |
 
-Event responses include the recurrence in words and the linked objects.
+Event responses include the recurrence in words, the linked objects and
+the changed occurrences.
 Changing an event, its links or its people follows the same edit rule as
-the web pages. The links and people endpoints also need NetBox permissions
-on Event Object and Event Person.
+the web pages. The links, people and occurrence change endpoints also need
+NetBox permissions on Event Object, Event Person and Occurrence Change.

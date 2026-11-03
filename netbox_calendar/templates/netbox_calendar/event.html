@@ -70,37 +70,63 @@
         <table class="table table-hover">
           {% for occurrence in upcoming %}
             <tr>
-              <td>{{ occurrence.start|date:"D j M Y H:i" }}</td>
+              <td>
+                {{ occurrence.start|date:"D j M Y H:i" }}
+                {% if occurrence.is_moved %}
+                  <span class="badge text-bg-warning">{% trans "moved" %}</span>
+                  <div class="small text-secondary">
+                    {% blocktrans with original=occurrence.original_start|date:"D j M Y H:i" %}From {{ original }}{% endblocktrans %}:
+                    {{ occurrence.change.reason }}
+                  </div>
+                {% endif %}
+              </td>
               <td class="text-end">
                 {% if can_edit %}
-                  <form method="post" action="{% url 'plugins:netbox_calendar:event_skip' pk=object.pk %}" class="d-inline">
-                    {% csrf_token %}
-                    <input type="hidden" name="occurrence" value="{{ occurrence.start.isoformat }}">
-                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="{% trans 'Call off this one occurrence' %}">{% trans "Skip" %}</button>
-                  </form>
+                  {# Skip or move this occurrence, with a reason. #}
+                  <a href="{% url 'plugins:netbox_calendar:event_occurrence' pk=object.pk %}?occurrence={{ occurrence.original_start.isoformat|urlencode }}"
+                     class="btn btn-sm btn-outline-secondary" title="{% trans 'Skip or move this one occurrence' %}">
+                    <i class="mdi mdi-pencil"></i> {% trans "Edit" %}
+                  </a>
                 {% endif %}
               </td>
             </tr>
           {% empty %}
             <tr><td class="text-secondary">{% trans "None" %}</td></tr>
           {% endfor %}
-          {% for moment in skipped %}
-            <tr class="text-secondary">
-              <td><s>{{ moment|date:"D j M Y H:i" }}</s> {% trans "skipped" %}</td>
-              <td class="text-end">
-                {% if can_edit %}
-                  <form method="post" action="{% url 'plugins:netbox_calendar:event_skip' pk=object.pk %}" class="d-inline">
-                    {% csrf_token %}
-                    <input type="hidden" name="occurrence" value="{{ moment.isoformat }}">
-                    <input type="hidden" name="restore" value="1">
-                    <button type="submit" class="btn btn-sm btn-outline-secondary">{% trans "Bring back" %}</button>
-                  </form>
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
         </table>
       </div>
+      {% if occurrence_changes %}
+        <div class="card">
+          <h2 class="card-header">{% trans "Changed Occurrences" %}</h2>
+          <table class="table table-hover">
+            {% for change, active in occurrence_changes %}
+              <tr{% if not active %} class="text-secondary"{% endif %}>
+                <td class="text-nowrap">
+                  {% if change.is_skipped %}<s>{{ change.original_start|date:"D j M Y H:i" }}</s>{% else %}{{ change.original_start|date:"D j M Y H:i" }}{% endif %}
+                </td>
+                <td>
+                  {% if change.is_skipped %}
+                    <span class="badge text-bg-secondary">{% trans "skipped" %}</span>
+                  {% else %}
+                    <span class="badge text-bg-warning">{% trans "moved" %}</span>
+                    {% if object.all_day %}{{ change.start|date:"D j M Y" }}{% else %}{{ change.start|date:"D j M Y H:i" }} - {{ change.end|date:"H:i" }}{% endif %}
+                  {% endif %}
+                  <div class="small">{{ change.reason }}</div>
+                  {% if not active %}<div class="small">{% trans "No longer in the series: the event's time or recurrence changed." %}</div>{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if can_edit %}
+                    <a href="{% url 'plugins:netbox_calendar:event_occurrence' pk=object.pk %}?occurrence={{ change.original_start.isoformat|urlencode }}"
+                       class="btn btn-sm btn-outline-secondary" title="{% trans 'Change or bring back this occurrence' %}">
+                      <i class="mdi mdi-pencil"></i> {% trans "Edit" %}
+                    </a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% endif %}
     {% endif %}
     {% include 'inc/panels/tags.html' %}
     {% plugin_left_page object %}
