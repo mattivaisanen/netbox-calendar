@@ -142,7 +142,8 @@ class PageTests(TestCase):
         # Redrawn with All day unticked, an all-day event's form shows times again.
         self.event.all_day = True
         self.event.save()
-        page = self.client.get(url('event_edit', self.event.pk), query)
+        # NetBox draws a hidden empty "all_day" next to the tick box, so an unticked box sends "".
+        page = self.client.get(url('event_edit', self.event.pk), {**query, 'all_day': ''})
         self.assertEqual(page.context['form'].fields['start'].widget.__class__.__name__, 'CalendarDateTimePicker')
 
     def test_edit_keeps_links_and_lists_role_devices(self):
