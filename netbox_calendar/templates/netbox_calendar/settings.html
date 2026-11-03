@@ -1,0 +1,45 @@
+{% extends 'generic/_base.html' %}
+{% load form_helpers %}
+{% load i18n %}
+
+{% block title %}{% trans "Calendar Settings" %}{% endblock %}
+
+{% block subtitle %}
+  <div class="text-secondary">{% trans "configuration.py sets each value. A value saved here overrides it until you switch back. Changes apply at once, without a restart." %}</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12 col-lg-8">
+    <form method="post" class="card">
+      {% csrf_token %}
+      <h2 class="card-header">{% trans "Settings" %}</h2>
+      <div class="card-body">
+        {% for row in rows %}
+          <div class="mb-4 pb-2{% if not forloop.last %} border-bottom{% endif %}">
+            {% render_field row.field %}
+            <div class="row">
+              <div class="offset-sm-3 col small text-secondary d-flex flex-wrap align-items-center gap-2">
+                {% if row.source == 'saved' %}
+                  <span class="badge text-bg-primary">{% trans "Saved here" %}</span>
+                  {% if row.saved %}{{ row.saved.updated|date:"SHORT_DATETIME_FORMAT" }}{% if row.saved.updated_by %}, {{ row.saved.updated_by }}{% endif %}.{% endif %}
+                  <button type="submit" name="reset" value="{{ row.field.name }}" formnovalidate class="btn btn-sm btn-outline-secondary">
+                    {% trans "Use configuration.py" %}
+                  </button>
+                {% elif row.source == 'config' %}
+                  <span class="badge text-bg-secondary">{% trans "From configuration.py" %}</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">{% trans "Default" %}</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="card-footer text-end">
+        <button type="submit" class="btn btn-primary">{% trans "Save" %}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

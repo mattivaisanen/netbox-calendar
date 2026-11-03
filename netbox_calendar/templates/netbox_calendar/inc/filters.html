@@ -1,0 +1,29 @@
+{% load i18n %}
+{# The filters of the month view and the timeline, sent as a GET form. #}
+<form method="get" class="card mb-3">
+  <div class="card-body py-2">
+    {% for name, value in keep.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-1" for="{{ filter_form.event_type_id.id_for_label }}">{{ filter_form.event_type_id.label }}</label>
+        {{ filter_form.event_type_id }}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-1" for="{{ filter_form.status.id_for_label }}">{{ filter_form.status.label }}</label>
+        {{ filter_form.status }}
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label small mb-1" for="{{ filter_form.tag.id_for_label }}">{{ filter_form.tag.label }}</label>
+        {{ filter_form.tag }}
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label small mb-1" for="{{ filter_form.mine.id_for_label }}">{{ filter_form.mine.label }}</label>
+        {{ filter_form.mine }}
+      </div>
+      <div class="col-12 col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary"><i class="mdi mdi-filter"></i> {% trans "Filter" %}</button>
+        <a href="?{% for name, value in keep.items %}{{ name }}={{ value }}&{% endfor %}" class="btn btn-outline-secondary">{% trans "Clear" %}</a>
+      </div>
+    </div>
+  </div>
+</form>

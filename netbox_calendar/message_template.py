@@ -1,0 +1,74 @@
+"""
+The notification text: {{ data.message }} for webhooks and the body of
+direct e-mail, from a template superusers can change on Calendar ->
+Settings ("Notification message").
+
+The template is Jinja2, like NetBox's own webhook body templates, rendered
+in a sandbox. Variables:
+
+- notice: what happened ("Event reminder", "Event cancelled")
+- title, event_type, status, impact: of the event
+- start, end: the occurrence's start and end, as local text
+- when: start and end in one line ("Tue 4 Nov 2026 22:00 - 23:30")
+- objects: what the event is about, comma separated
+- owner, by: the event owner's and the acting user's names (by is empty
+  for notices sent by the background job)
+- link: the event's address (full when netbox_url is set)
+- comment: the event's description
+
+Teams shows a single line break as a space, so the default puts a blank
+line between lines.
+
+No Django models are imported here: the plugin config reads DEFAULT at
+startup.
+"""
+import logging
+
+from jinja2 import TemplateError
+from jinja2.sandbox import SandboxedEnvironment
+
+logger = logging.getLogger('netbox_calendar.notifications')
+
+DEFAULT = (
+    '{{ notice }}: {{ title }}\n\n'
+    '{{ event_type }}, {{ when }}\n\n'
+    '{% if objects %}Concerns: {{ objects }}\n\n{% endif %}'
+    '{% if impact %}Impact: {{ impact }}\n\n{% endif %}'
+    '{% if by %}By: {{ by }}\n\n{% endif %}'
+    '{{ link }}'
+)
+
+SAMPLE = {
+    'notice': 'Event reminder', 'title': 'Core switch upgrade', 'event_type': 'Upgrade', 'status': 'Planned',
+    'impact': 'Outage', 'start': '4 Nov 2026 22:00', 'end': '4 Nov 2026 23:30',
+    'when': '4 Nov 2026 22:00 - 23:30', 'objects': 'core1, core2', 'owner': 'Alex Admin', 'by': '',
+    'link': 'https://netbox.example.com/plugins/calendar/events/7/', 'comment': '',
+}
+
+
+def _environment():
+    return SandboxedEnvironment(autoescape=False)
+
+
+def clean(text):
+    """The template as stored: browser line breaks (\\r\\n) made plain."""
+    return (text or '').replace('\r\n', '\n').replace('\r', '\n')
+
+
+def check(text):
+    """Raise ValueError with a readable reason if `text` can't be rendered."""
+    try:
+        _environment().from_string(clean(text)).render(**SAMPLE)
+    except TemplateError as error:
+        raise ValueError(str(error)) from error
+
+
+def render(text, context):
+    """`text` rendered with `context`; the default template when `text` is
+    empty or broken (a broken one is logged)."""
+    if text:
+        try:
+            return _environment().from_string(clean(text)).render(**context).strip()
+        except TemplateError:
+            logger.exception('Notification message template failed; using the default')
+    return _environment().from_string(DEFAULT).render(**context).strip()

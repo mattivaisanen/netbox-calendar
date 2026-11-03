@@ -1,0 +1,28 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load plugins %}
+{% load i18n %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col col-md-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Event Role" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Name" %}</th><td>{{ object.name }}</td></tr>
+        <tr><th scope="row">{% trans "Can edit" %}</th><td>{% checkmark object.can_edit %}</td></tr>
+        <tr><th scope="row">{% trans "Notified" %}</th><td>{% checkmark object.notify %}</td></tr>
+        <tr><th scope="row">{% trans "Weight" %}</th><td>{{ object.weight }}</td></tr>
+        <tr><th scope="row">{% trans "Description" %}</th><td>{{ object.description|placeholder }}</td></tr>
+      </table>
+    </div>
+    {% include 'inc/panels/tags.html' %}
+    {% plugin_left_page object %}
+  </div>
+  <div class="col col-md-6">
+    {% include 'inc/panels/custom_fields.html' %}
+    {% plugin_right_page object %}
+  </div>
+</div>
+{% plugin_full_width_page object %}
+{% endblock %}

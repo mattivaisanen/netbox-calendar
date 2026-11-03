@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netbox-calendar"
+version = "0.1.0"
+description = "Schedule upgrades, downtime, maintenance and other events on NetBox objects, with calendar views, reminders and an iCal feed."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Matti" }]
+requires-python = ">=3.10"
+# NetBox provides Django and everything else the plugin uses, python-dateutil
+# included. It is listed because recurrence.py uses it directly. The
+# supported NetBox versions are checked at startup (min_version in
+# netbox_calendar/__init__.py).
+dependencies = ["python-dateutil>=2.8"]
+classifiers = [
+    "Framework :: Django",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Homepage = "https://github.com/mattivaisanen/netbox-calendar"
+Documentation = "https://github.com/mattivaisanen/netbox-calendar/tree/main/docs"
+Changelog = "https://github.com/mattivaisanen/netbox-calendar/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["netbox_calendar*"]
+
+# Templates are not Python files, so they must be listed to end up in the wheel.
+[tool.setuptools.package-data]
+netbox_calendar = ["templates/**/*.html"]

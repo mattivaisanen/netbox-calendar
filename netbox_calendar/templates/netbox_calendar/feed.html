@@ -1,0 +1,65 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Calendar Feed" %}{% endblock %}
+
+{% block subtitle %}
+  <div class="text-secondary">{% trans "Subscribe to NetBox events in Outlook, Google Calendar or on your phone." %}</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12 col-lg-8">
+    {% if not enabled %}
+      <div class="alert alert-warning">{% trans "Calendar feeds are turned off on this NetBox." %}</div>
+    {% endif %}
+    <div class="card">
+      <h2 class="card-header">{% trans "Your Feed Address" %}</h2>
+      <div class="card-body">
+        <div class="input-group mb-2">
+          <input type="text" class="form-control font-monospace" id="feed-url" value="{{ feed_url }}" readonly>
+          <button class="btn btn-outline-secondary copy-content" data-clipboard-target="#feed-url" type="button" title="{% trans 'Copy' %}">
+            <i class="mdi mdi-content-copy"></i>
+          </button>
+        </div>
+        <p class="text-secondary small">
+          {% trans "This address works without a NetBox login, so keep it to yourself. It shows the events you may view. Reset it if it gets out." %}
+          {% if not base_url %}{% trans "Calendars outside your network may not reach it; ask an admin to set the NetBox address in the plugin settings." %}{% endif %}
+        </p>
+        <form method="post" onsubmit="return confirm('{% trans "The current address stops working. Continue?" %}');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-outline-danger"><i class="mdi mdi-refresh"></i> {% trans "Reset Address" %}</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-header">{% trans "Only Some Events" %}</h2>
+      <div class="card-body">
+        <p>{% trans "Add filters to the address, the same as on the event list:" %}</p>
+        <table class="table table-sm">
+          <tr><td class="font-monospace">?mine=true</td><td>{% trans "Events you own or are on" %}</td></tr>
+          {% for event_type in event_types %}
+            <tr><td class="font-monospace">?event_type={{ event_type.slug }}</td><td>{{ event_type.name }}</td></tr>
+          {% endfor %}
+          <tr><td class="font-monospace">?impact=outage</td><td>{% trans "Only outages" %}</td></tr>
+          <tr><td class="font-monospace">?tag=&lt;slug&gt;</td><td>{% trans "Events with a tag" %}</td></tr>
+        </table>
+        <p class="small text-secondary">{% trans "Combine them with &, such as ?mine=true&impact=outage." %}</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-header">{% trans "Adding It" %}</h2>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li><strong>Outlook:</strong> {% trans "Add calendar → Subscribe from web, paste the address." %}</li>
+          <li><strong>Google Calendar:</strong> {% trans "Other calendars → From URL." %}</li>
+          <li><strong>{% trans "iPhone" %}:</strong> {% trans "Settings → Calendar → Accounts → Add Subscribed Calendar." %}</li>
+        </ul>
+        <p class="small text-secondary mt-2 mb-0">{% trans "Calendars refresh a subscribed feed on their own schedule, often every few hours." %}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

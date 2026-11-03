@@ -1,0 +1,48 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load plugins %}
+{% load i18n %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col col-md-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Event Type" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Name" %}</th><td>{% if object.icon %}<i class="mdi mdi-{{ object.icon }}"></i> {% endif %}{{ object.name }}</td></tr>
+        <tr><th scope="row">{% trans "Color" %}</th><td><span class="color-label" style="background-color: #{{ object.color }}">&nbsp;</span></td></tr>
+        <tr><th scope="row">{% trans "Description" %}</th><td>{{ object.description|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Default duration" %}</th><td>{% blocktrans with minutes=object.default_duration %}{{ minutes }} minutes{% endblocktrans %}</td></tr>
+        <tr><th scope="row">{% trans "Change freeze" %}</th><td>{% checkmark object.change_freeze %}</td></tr>
+        <tr>
+          <th scope="row">{% trans "Events" %}</th>
+          <td><a href="{% url 'plugins:netbox_calendar:event_list' %}?event_type_id={{ object.pk }}">{{ object.events.count }}</a></td>
+        </tr>
+      </table>
+    </div>
+    {% include 'inc/panels/tags.html' %}
+    {% plugin_left_page object %}
+  </div>
+  <div class="col col-md-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Notifications" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr>
+          <th scope="row">{% trans "Notify on" %}</th>
+          <td>{% for value in object.notify_on %}<span class="badge text-bg-secondary">{{ value|title }}</span> {% empty %}<span class="text-secondary">{% trans "Nothing" %}</span>{% endfor %}</td>
+        </tr>
+        <tr><th scope="row">{% trans "Reminders" %}</th><td>{{ reminders_text|default:_("none") }}</td></tr>
+        <tr><th scope="row">{% trans "Owner" %}</th><td>{% checkmark object.notify_owner %}</td></tr>
+        <tr><th scope="row">{% trans "People on the event" %}</th><td>{% checkmark object.notify_people %}</td></tr>
+        <tr><th scope="row">{% trans "Group" %}</th><td>{{ object.notify_group|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Subscribers of objects" %}</th><td>{% checkmark object.notify_subscribers %}</td></tr>
+        <tr><th scope="row">{% trans "Contacts of objects" %}</th><td>{% checkmark object.notify_contacts %}</td></tr>
+        <tr><th scope="row">{% trans "Send e-mail" %}</th><td>{% checkmark object.send_email %}</td></tr>
+      </table>
+    </div>
+    {% include 'inc/panels/custom_fields.html' %}
+    {% plugin_right_page object %}
+  </div>
+</div>
+{% plugin_full_width_page object %}
+{% endblock %}

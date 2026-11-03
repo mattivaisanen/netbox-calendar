@@ -1,0 +1,9 @@
+{% load helpers %}
+{# One event occurrence or change request on the month grid, as a colored pill. #}
+<a href="{{ entry.url }}" class="nbcal-entry d-block text-truncate{% if entry.is_cancelled %} text-decoration-line-through opacity-50{% endif %}{% if entry.is_past %} opacity-75{% endif %}"
+   style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};"
+   title="{{ entry.type_name }}: {{ entry.title }}{% if entry.status_label %} ({{ entry.status_label }}){% endif %}">
+  {% if entry.icon %}<i class="mdi mdi-{{ entry.icon }}"></i>{% endif %}
+  {% if not entry.all_day %}<span class="fw-bold">{{ entry.start|date:"H:i" }}</span>{% endif %}
+  {{ entry.title }}
+</a>
