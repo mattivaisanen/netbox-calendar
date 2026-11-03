@@ -124,6 +124,22 @@ class EditNoticeTests(TestCase):
         self.assertEqual(name, 'event.ics')
         self.assertIn('METHOD:REQUEST', content)
         self.assertTrue(mimetype.startswith('text/calendar'))
+        self.assertTrue(message.subject.startswith('Event scheduled: Firmware update ('))
+        self.assertIn('When: ', message.body)
+
+    def test_email_uses_its_own_templates(self):
+        event = make_event(owner=self.owner)
+        event.event_type.send_email = True
+        event.event_type.save()
+        plugin_settings.save('direct_email', True)
+        plugin_settings.save('message', 'Webhook text')
+        plugin_settings.save('email_subject', '[{{ event_type }}]\n{{ title }}')
+        plugin_settings.save('email_body', 'Mail text for {{ title }}')
+
+        notifications.notify(event, NoticeChoices.SCHEDULED)
+        message = mail.outbox[0]
+        self.assertEqual(message.subject, '[Upgrade] Firmware update')
+        self.assertEqual(message.body, 'Mail text for Firmware update')
 
     def test_notices_are_event_rule_triggers(self):
         from extras.forms.model_forms import EventRuleForm

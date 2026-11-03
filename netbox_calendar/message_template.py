@@ -1,9 +1,12 @@
 """
-The notification text: {{ data.message }} for webhooks and the body of
-direct e-mail, from a template superusers can change on Calendar ->
-Settings ("Notification message").
+The notification texts, from templates superusers can change on
+Calendar -> Settings:
 
-The template is Jinja2, like NetBox's own webhook body templates, rendered
+- "Notification message": {{ data.message }} for webhooks (DEFAULT)
+- "E-mail subject" and "E-mail body": direct e-mail (EMAIL_SUBJECT,
+  EMAIL_BODY)
+
+Each template is Jinja2, like NetBox's own webhook body templates, rendered
 in a sandbox. Variables:
 
 - notice: what happened ("Event reminder", "Event cancelled")
@@ -20,7 +23,7 @@ in a sandbox. Variables:
 - reason: why that occurrence was skipped, moved or brought back
 
 Teams shows a single line break as a space, so the default puts a blank
-line between lines.
+line between lines in the webhook message. E-mail keeps single breaks.
 
 No Django models are imported here: the plugin config reads DEFAULT at
 startup.
@@ -40,6 +43,25 @@ DEFAULT = (
     '{% if objects %}Concerns: {{ objects }}\n\n{% endif %}'
     '{% if impact %}Impact: {{ impact }}\n\n{% endif %}'
     '{% if by %}By: {{ by }}\n\n{% endif %}'
+    '{{ link }}'
+)
+
+EMAIL_SUBJECT = '{{ notice }}: {{ title }} ({{ when }})'
+
+EMAIL_BODY = (
+    '{{ notice }}: {{ title }}\n'
+    '\n'
+    'When: {{ when }}\n'
+    'Type: {{ event_type }}\n'
+    'Status: {{ status }}\n'
+    '{% if impact %}Impact: {{ impact }}\n{% endif %}'
+    '{% if objects %}Concerns: {{ objects }}\n{% endif %}'
+    '{% if owner %}Owner: {{ owner }}\n{% endif %}'
+    '{% if by %}By: {{ by }}\n{% endif %}'
+    '{% if occurrence %}\n{{ occurrence }}\n{% endif %}'
+    '{% if reason %}Reason: {{ reason }}\n{% endif %}'
+    '{% if comment %}\n{{ comment }}\n{% endif %}'
+    '\n'
     '{{ link }}'
 )
 
@@ -69,12 +91,12 @@ def check(text):
         raise ValueError(str(error)) from error
 
 
-def render(text, context):
-    """`text` rendered with `context`; the default template when `text` is
-    empty or broken (a broken one is logged)."""
+def render(text, context, default=DEFAULT):
+    """`text` rendered with `context`; the `default` template when `text`
+    is empty or broken (a broken one is logged)."""
     if text:
         try:
             return _environment().from_string(clean(text)).render(**context).strip()
         except TemplateError:
-            logger.exception('Notification message template failed; using the default')
-    return _environment().from_string(DEFAULT).render(**context).strip()
+            logger.exception('Notification template failed; using the default')
+    return _environment().from_string(default).render(**context).strip()

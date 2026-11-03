@@ -192,6 +192,12 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
     (conditions) and webhook body templates ({{ data.<key> }}).
     `occurrence` is occurrence_info() for a notice about one occurrence.
     """
+    data, _context = _data_and_context(event, kind, users, contacts, start, end, actor, offset, occurrence)
+    return data
+
+
+def _data_and_context(event, kind, users, contacts, start, end, actor, offset, occurrence):
+    """event_data(), and the variables the message templates get (message_template.py)."""
     targets = Targets(event)
     objects = _linked_objects(event)
     objects_text = describe(event, targets)
@@ -219,7 +225,7 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
     # One short line on top of the title, like netbox-change-approval's
     # `detail`, so one body template can serve both plugins.
     detail = f"{context['when']}, by {context['by']}" if context['by'] else context['when']
-    return {
+    data = {
         'message': message_template.render(get_setting('message'), context),
         'notice': kind,
         'event': notice,
@@ -255,6 +261,7 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
         'contacts': [{'name': name, 'email': email} for name, email in contacts],
         'recipient_emails': ';'.join(emails),
     }
+    return data, context
 
 
 def notify(event, kind, start=None, end=None, actor=None, offset=None, occurrence=None):
@@ -271,14 +278,14 @@ def notify(event, kind, start=None, end=None, actor=None, offset=None, occurrenc
     start = start or event.start
     end = end or event.end
     users, contacts = recipients(event, actor)
-    data = event_data(event, kind, users, contacts, start, end, actor, offset, occurrence)
+    data, context = _data_and_context(event, kind, users, contacts, start, end, actor, offset, occurrence)
     if users and on('notifications'):
         _bell(event, kind, users)
     # Event Rules run even when nobody is told directly, such as for a
     # webhook that posts every event to a team channel.
     _fire_event(event, kind, data, actor)
     if (users or contacts) and on('direct_email') and event.event_type.send_email:
-        send_email(event, data, users, contacts)
+        send_email(event, data, context, users, contacts)
     return len(users) + len(contacts)
 
 
@@ -309,11 +316,12 @@ def _fire_event(event, kind, data, actor):
         logger.exception('Event rules for event #%s failed', event.pk)
 
 
-def send_email(event, data, users, contacts):
+def send_email(event, data, context, users, contacts):
     """
     E-mail the notice through NetBox's EMAIL settings, with the event as a
     calendar invite (a cancelled event as a cancellation), so it lands in
-    Outlook as a meeting.
+    Outlook as a meeting. Subject and body come from their own templates
+    (email_subject, email_body), not the webhook message.
     """
     addresses = [(display_name(user), user.email) for user in users if user.email]
     addresses += list(contacts)
@@ -327,9 +335,12 @@ def send_email(event, data, users, contacts):
         [event], name=event.title, method=method, attendees=addresses, organizer=organizer,
         describe=lambda _event: data['objects_text'],
     )
-    subject = f'{data["event"]}: {event.title} ({data["when"]})'
+    subject = message_template.render(get_setting('email_subject'), context, message_template.EMAIL_SUBJECT)
+    # A header must be one line.
+    subject = ' '.join(subject.split())[:250]
+    body = message_template.render(get_setting('email_body'), context, message_template.EMAIL_BODY)
     message = EmailMultiAlternatives(
-        subject=subject[:250], body=data['message'], from_email=settings.SERVER_EMAIL,
+        subject=subject, body=body, from_email=settings.SERVER_EMAIL,
         to=[email for _name, email in addresses],
     )
     message.attach('event.ics', invite, f'text/calendar; method={method}; charset=UTF-8')
