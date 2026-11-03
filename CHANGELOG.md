@@ -17,6 +17,10 @@
   *ends Tue 10.11.2026 12:00*.
 - A repeating event lists its **Next** three times under the repeat fields,
   in NetBox's date format, updated as the form is filled in.
+- People are added on the event page only. The event form's *Add people*
+  section is gone; **Add People** on the People card adds users, groups
+  and contacts in one role, and **Add and pick another role** goes on to
+  the next. The owner stays in the event form.
 - The event page shows the event's journal where the empty Comments panel
   was: the five newest entries and a form to add one without leaving the
   page. The Journal tab still lists them all. Comments (set in the edit

@@ -49,9 +49,7 @@ class PageTests(TestCase):
         html = UpcomingEventsWidget(config={'days': 3}).render(request)
         self.assertIn(self.event.title, html)
 
-    def test_add_event_with_links_and_people(self):
-        engineer = make_user('engineer')
-        role = EventRole.objects.get(slug='technical-contact')
+    def test_add_event_with_links(self):
         start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
         response = self.client.post(url('event_add'), {
             'title': 'Replace power supply',
@@ -62,8 +60,6 @@ class PageTests(TestCase):
             'repeat': 'monthly_weekday',
             'repeat_interval': 1,
             'include__dcim__device': [self.device.pk],
-            'people_role': role.pk,
-            'people_users': [engineer.pk],
         })
         self.assertEqual(response.status_code, 302)
         event = Event.objects.get(title='Replace power supply')
@@ -71,7 +67,24 @@ class PageTests(TestCase):
         self.assertEqual(event.end - event.start, timedelta(minutes=120))  # The type's default
         self.assertTrue(event.rrule.startswith('FREQ=MONTHLY;BYDAY='))
         self.assertEqual(event.links.get().object, self.device)
-        self.assertTrue(EventPerson.objects.filter(event=event, user=engineer, role=role).exists())
+
+    def test_add_people_in_several_roles(self):
+        # People are added on the event page, several per role.
+        engineer, lead = make_user('engineer'), make_user('lead')
+        technical = EventRole.objects.get(slug='technical-contact')
+        response = self.client.post(url('event_person_add', self.event.pk), {
+            'role': technical.pk, 'users': [engineer.pk, lead.pk], '_addanother': '',
+        })
+        self.assertRedirects(response, url('event_person_add', self.event.pk), fetch_redirect_response=False)
+        other = EventRole.objects.exclude(pk=technical.pk).first()
+        self.client.post(url('event_person_add', self.event.pk), {'role': other.pk, 'users': [lead.pk]})
+        people = set(self.event.people.values_list('user__username', 'role__slug'))
+        self.assertEqual(people, {('engineer', technical.slug), ('lead', technical.slug), ('lead', other.slug)})
+
+        # A role with nobody picked is refused.
+        response = self.client.post(url('event_person_add', self.event.pk), {'role': technical.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Pick at least one')
 
     def test_end_by_length_or_end_date_and_repeat_ends(self):
         start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
