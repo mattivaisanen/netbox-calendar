@@ -96,6 +96,13 @@ class EditNoticeTests(TestCase):
         self.assertIn('METHOD:REQUEST', content)
         self.assertTrue(mimetype.startswith('text/calendar'))
 
+    def test_notices_are_event_rule_triggers(self):
+        from extras.forms.model_forms import EventRuleForm
+
+        choices = dict(EventRuleForm.base_fields['event_types'].choices)
+        self.assertIn('netbox_calendar.scheduled', choices)
+        self.assertIn('netbox_calendar.reminder', choices)
+
     def test_event_rule_webhook_body(self):
         """A notice runs Event Rules, and a body template written for
         netbox-change-approval's data renders with it."""

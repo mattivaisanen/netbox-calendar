@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The calendar's notices (Event scheduled, Event reminder, ...) are now
+  listed as Event Rule triggers. They were registered too late for
+  NetBox's form to see them.
 - Event Rule data has `display` and `detail`, so webhook body templates
   written for netbox-change-approval also work for calendar notices.
 - Docs: Event Rules should use the calendar's notice types, not Object
