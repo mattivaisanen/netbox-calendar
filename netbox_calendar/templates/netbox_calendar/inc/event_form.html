@@ -1,0 +1,39 @@
+{% load form_helpers %}
+{% load i18n %}
+{% comment %}
+NetBox's htmx/form.html, except that the objects section (html_id
+"target_fields") is drawn by inc/targets.html. Also used for HTMX re-renders.
+{% endcomment %}
+
+{% for field in form.hidden_fields %}
+  {{ field }}
+{% endfor %}
+
+{% for fieldset in form.fieldsets %}
+  {% if fieldset.html_id == 'target_fields' %}
+    {% include 'netbox_calendar/inc/targets.html' %}
+  {% else %}
+    {% render_fieldset form fieldset %}
+  {% endif %}
+{% endfor %}
+
+{% if form.custom_fields %}
+  <div class="field-group mb-5">
+    <div class="row">
+      <h2 class="col-9 offset-3">{% trans "Custom Fields" %}</h2>
+    </div>
+    {% render_custom_fields form %}
+  </div>
+{% endif %}
+
+{% if form.comments %}
+  <div class="field-group mb-5">
+    {% render_field form.comments %}
+  </div>
+{% endif %}
+
+{% if form.changelog_message %}
+  <div class="bg-primary-subtle border border-primary rounded-1 pt-3 px-3 mb-3">
+    {% render_field form.changelog_message %}
+  </div>
+{% endif %}

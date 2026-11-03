@@ -266,6 +266,9 @@ def journal_context(request, event):
 class EventEditView(generic.ObjectEditView):
     queryset = Event.objects.all()
     form = forms.EventForm
+    # The objects section is drawn as three boxes (inc/targets.html).
+    template_name = 'netbox_calendar/event_edit.html'
+    htmx_template_name = 'netbox_calendar/inc/event_form.html'
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -325,6 +328,65 @@ class EventChangeMixin(ConditionalLoginRequiredMixin):
         if not can_edit(request.user, event):
             raise PermissionDenied(_('You may not change this event.'))
         return event
+
+
+def _by_type(objects):
+    """[(type name, [objects])] in the order the types first appear."""
+    groups = {}
+    for obj in objects:
+        groups.setdefault(obj._meta.verbose_name, []).append(obj)
+    return list(groups.items())
+
+
+class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
+    """
+    The event form's "This event concerns" summary (HTMX): reads the
+    object pickers and the filter from the address, as the form would save
+    them, and says in words what they cover and how many devices that is.
+    """
+    template_name = 'netbox_calendar/inc/target_summary.html'
+    LIMIT = 10
+
+    def get(self, request):
+        if not request.user.has_perm('netbox_calendar.view_event'):
+            raise PermissionDenied
+        types = {forms.type_label(content_type): content_type for content_type in forms.linkable_types()}
+        objects = []
+        for key in request.GET:
+            parsed = forms.parse_target_field(key)
+            if not parsed or parsed[0] not in types:
+                continue
+            label, exclude = parsed
+            pks = [pk for pk in request.GET.getlist(key) if pk.isdigit()]
+            model = types[label].model_class()
+            objects += [(obj, exclude) for obj in model.objects.restrict(request.user, 'view').filter(pk__in=pks)]
+
+        # An event not saved, with the filter as typed, so the rule reads as on save.
+        event = Event()
+        filter_type = request.GET.get('filter_object_type')
+        if filter_type and filter_type.isdigit() and ContentType.objects.filter(pk=filter_type).exists():
+            event.filter_object_type_id = int(filter_type)
+            event.filter_query = request.GET.get('filter_query', '')
+        targets = Targets(event, objects)
+
+        devices = affected_devices(event, targets).restrict(request.user, 'view').order_by('name')
+        device_count = devices.count()
+        others = [obj for obj in targets.picked if not isinstance(obj, Device)]
+        filter_objects = 0
+        if event.filter_object_type_id and not targets.filter_is_criterion and targets.filtered is not None:
+            filter_objects = targets.filtered.count()
+        return render(request, self.template_name, {
+            'targets': targets,
+            'match': [(objs[0]._meta.verbose_name, objs) for objs in targets.criteria.values()],
+            'picked': _by_type(targets.picked),
+            'excluded': _by_type(targets.excluded),
+            'filter_model': targets.filter_model,
+            'filter_query': event.filter_query,
+            'device_count': device_count,
+            'devices': devices[:self.LIMIT],
+            'more_devices': max(device_count - self.LIMIT, 0),
+            'other_count': len(others) + filter_objects,
+        })
 
 
 class EventLinkView(EventChangeMixin, View):

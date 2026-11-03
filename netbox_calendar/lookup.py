@@ -195,16 +195,24 @@ class Targets:
     - deleted: links to objects deleted since (they count for nothing).
     """
 
-    def __init__(self, event):
+    def __init__(self, event, objects=None):
+        """
+        `objects`: (object, excluded) pairs to read instead of the event's
+        links, for an event not saved yet (the event form's preview).
+        """
         self.event = event
         self.rollup = get_setting('scope_rollup', True)
         self.criteria = OrderedDict()
         self.picked, self.excluded, self.deleted = [], [], []
-        for link in event.links.select_related('object_type'):
-            obj = link.object
-            if obj is None:
-                self.deleted.append(link)
-            elif link.exclude:
+        if objects is None:
+            objects = []
+            for link in event.links.select_related('object_type'):
+                if link.object is None:
+                    self.deleted.append(link)
+                else:
+                    objects.append((link.object, link.exclude))
+        for obj, exclude in objects:
+            if exclude:
                 self.excluded.append(obj)
             elif obj._meta.label_lower in DEVICE_MATCHES and self.rollup:
                 self.criteria.setdefault(obj._meta.label_lower, []).append(obj)

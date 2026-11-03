@@ -249,60 +249,96 @@ def _as_list(value):
     return list(value) if isinstance(value, (list, tuple)) else [value]
 
 
+#: The event form's three object boxes: (key, add menu, title, help text).
+#: "match" holds criteria kinds, "include" other included kinds, "exclude"
+#: excluded kinds. See lookup.py for how they combine.
+TARGET_BOXES = (
+    ('match', 'add_match', _('Devices and VMs that match'),
+     _('Every line must match. Several objects on one line: any of them.')),
+    ('include', 'add_include', _('Also include'),
+     _('Picked one by one. Always on the event, whatever the box above says.')),
+    ('exclude', 'add_exclude', _('Never include'),
+     _('Wins over both boxes above. An excluded site, rack, role, ... leaves out every device in it.')),
+)
+TARGET_MENUS = tuple(menu for _key, menu, _title, _help in TARGET_BOXES)
+
+
 class TargetFieldsMixin:
     """
-    The event form's objects: an "Add objects" menu and one picker per kind
-    of object in use, included or excluded. Choosing from the menu re-renders
-    the section (HTMX) with a picker for that kind. Opening the form shows
-    the kinds the event links now; a picker left empty is dropped on the next
-    re-render. See lookup.py for how the pickers combine.
+    The event form's objects, in three boxes: devices and VMs that match,
+    objects also included, objects never included. Each box has an "Add"
+    menu and one picker per kind of object in use. Choosing from a menu
+    re-renders the section (HTMX) with a picker for that kind. Opening the
+    form shows the kinds the event links now; a picker left empty is dropped
+    on the next re-render. See lookup.py for how the pickers combine.
     """
     def setup_target_fields(self):
         types = {type_label(content_type): content_type for content_type in linkable_types()}
         ordered = sorted(types, key=_type_order)
+        # Without the scope roll-up a site, role, ... is just one more object.
+        self.target_rollup = plugin_settings.get_setting('scope_rollup', True)
+        matching = DEVICE_MATCHES if self.target_rollup else ()
 
         def option(label, exclude=False):
             return target_field(label, exclude), types[label].name.capitalize()
 
-        self.fields['add_target'].choices = [
-            ('', _('Add objects...')),
-            (_('Match (all kinds must match, any one of each kind)'),
-             [option(label) for label in ordered if label in DEVICE_MATCHES]),
-            (_('Include one by one'), [option(label) for label in ordered if label not in DEVICE_MATCHES]),
-            (_('Exclude'), [option(label, True) for label in ordered if label in EXCLUDABLE]),
+        self.fields['add_match'].choices = [('', _('Add condition...'))] + [
+            option(label) for label in ordered if label in matching
+        ]
+        self.fields['add_include'].choices = [('', _('Add objects...'))] + [
+            option(label) for label in ordered if label not in matching
+        ]
+        self.fields['add_exclude'].choices = [('', _('Exclude...'))] + [
+            option(label, True) for label in ordered if label in EXCLUDABLE
         ]
 
         # What each picker shows: the values sent with the form (or in the
         # address), and the event's links when the form is first opened.
         source = self.data if self.is_bound else self.initial
         values = {}
-        if self.instance.pk and not self.is_bound and 'add_target' not in source:
+        if self.instance.pk and not self.is_bound and not any(menu in source for menu in TARGET_MENUS):
             for link in self.instance.links.select_related('object_type'):
                 values.setdefault(target_field(type_label(link.object_type), link.exclude), []).append(link.object_id)
         for key in source:
             if parse_target_field(key):
                 values[key] = source.getlist(key) if hasattr(source, 'getlist') else _as_list(source[key])
-        picked = source.get('add_target')
-        if picked and parse_target_field(picked):
-            values.setdefault(picked, [])
-        if not self.is_bound:
-            # The menu goes back to "Add objects..." once its picker is shown.
-            self.initial['add_target'] = ''
+        for menu in TARGET_MENUS:
+            picked = source.get(menu)
+            if picked and parse_target_field(picked):
+                values.setdefault(picked, [])
+            if not self.is_bound:
+                # The menu goes back to its "Add ..." line once its picker is shown.
+                self.initial[menu] = ''
 
         self.target_names = []
+        self.target_box_names = {key: [] for key, _menu, _title, _help in TARGET_BOXES}
         for name in sorted(values, key=lambda n: (parse_target_field(n)[1], _type_order(parse_target_field(n)[0]))):
             label, exclude = parse_target_field(name)
             if label not in types or (exclude and label not in EXCLUDABLE):
                 continue
             model = types[label].model_class()
-            plural = model._meta.verbose_name_plural
             self.fields[name] = DynamicModelMultipleChoiceField(
                 queryset=model.objects.all(), required=False, selector=True,
-                label=_('Except {types}').format(types=plural) if exclude else plural.capitalize(),
+                label=model._meta.verbose_name_plural.capitalize(),
             )
             if not self.is_bound:
                 self.initial[name] = values[name]
             self.target_names.append(name)
+            box = 'exclude' if exclude else 'match' if label in matching else 'include'
+            self.target_box_names[box].append(name)
+
+    @property
+    def target_boxes(self):
+        """The three boxes for the template: key, title, help, add menu and pickers (bound fields)."""
+        boxes = []
+        for key, menu, title, help_text in TARGET_BOXES:
+            if key == 'match' and not self.target_rollup:
+                continue
+            boxes.append({
+                'key': key, 'title': title, 'help': help_text, 'menu': self[menu],
+                'fields': [self[name] for name in self.target_box_names[key]],
+            })
+        return boxes
 
     def clean_targets(self):
         """An object can't be both included and excluded."""
@@ -321,7 +357,7 @@ class TargetFieldsMixin:
         what was taken out, switch what moved between included and excluded.
         Links to objects deleted since are kept (the event page shows them).
         """
-        if 'add_target' not in self.data and not self.target_names:
+        if not any(menu in self.data for menu in TARGET_MENUS) and not self.target_names:
             # Sent without the objects section (by a script, say): leave the links be.
             return
         wanted = {}
@@ -536,12 +572,15 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
     reminder_presets = reminder_preset_field()
     reminder_other = reminder_other_field()
 
-    # One picker per kind of object in use is added in __init__().
-    add_target = forms.ChoiceField(
-        required=False, label=_('Objects'), widget=HTMXSelect(hx_target_id='target_fields'),
-        help_text=_('Different kinds must all match: a device role and a location mean the devices of that role in '
-                    'that location. Several of one kind: any of them. Objects included one by one always count, '
-                    'and excluded ones never do.'),
+    # One add menu per box; one picker per kind of object in use is added in __init__().
+    add_match = forms.ChoiceField(
+        required=False, label=_('Add'), widget=HTMXSelect(hx_target_id='target_fields'),
+    )
+    add_include = forms.ChoiceField(
+        required=False, label=_('Add'), widget=HTMXSelect(hx_target_id='target_fields'),
+    )
+    add_exclude = forms.ChoiceField(
+        required=False, label=_('Add'), widget=HTMXSelect(hx_target_id='target_fields'),
     )
     filter_object_type = ContentTypeChoiceField(
         queryset=ContentType.objects.none(), required=False, label=_('Object type'),
@@ -549,8 +588,8 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
     filter_query = forms.CharField(
         required=False, max_length=1000, label=_('Filter'),
         help_text=_('Rarely needed. A filter as in an object list\'s address after "?", such as '
-                    'status=active&tag=core. A device or VM filter must match too, like another kind above. '
-                    'Objects added later match too.'),
+                    'status=active&tag=core. A device or VM filter is one more line under "Devices and VMs '
+                    'that match". Objects added later match too.'),
     )
 
     people_role = DynamicModelChoiceField(queryset=EventRole.objects.all(), required=False, label=_('Role'))
@@ -571,7 +610,8 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         FieldSet('repeat', 'repeat_interval', 'repeat_weekdays', 'repeat_until', 'repeat_count', 'rrule',
                  name=_('Repeat'), html_id='repeat_fields'),
         # The pickers in use are added to this section in __init__().
-        FieldSet('add_target', name=_('Objects'), html_id='target_fields'),
+        # The template shows this section as three boxes (TargetFieldsMixin.target_boxes).
+        FieldSet(*TARGET_MENUS, name=_('Objects'), html_id='target_fields'),
         FieldSet('filter_object_type', 'filter_query', name=_('Objects by filter')),
         FieldSet('people_role', 'people_users', 'people_groups', 'people_contacts', name=_('Add people')),
         FieldSet('reminder_source', 'reminder_presets', 'reminder_other', name=_('Notifications'),
@@ -591,7 +631,7 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         instance = self.instance
         self.setup_target_fields()
         self.fieldsets = tuple(
-            FieldSet('add_target', *self.target_names, name=_('Objects'), html_id='target_fields')
+            FieldSet(*TARGET_MENUS, *self.target_names, name=_('Objects'), html_id='target_fields')
             if getattr(fieldset, 'html_id', None) == 'target_fields' else fieldset
             for fieldset in self.fieldsets
         )

@@ -13,6 +13,7 @@ urlpatterns = [
 
     path('events/', include(get_model_urls('netbox_calendar', 'event', detail=False))),
     path('events/<int:pk>/', include(get_model_urls('netbox_calendar', 'event'))),
+    path('events/targets-preview/', views.EventTargetsPreviewView.as_view(), name='event_targets_preview'),
     path('events/<int:pk>/link/', views.EventLinkView.as_view(), name='event_link'),
     path('events/<int:pk>/unlink/<int:link_pk>/', views.EventUnlinkView.as_view(), name='event_unlink'),
     path('events/<int:pk>/people/add/', views.EventPersonView.as_view(), name='event_person_add'),

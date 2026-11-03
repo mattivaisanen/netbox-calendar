@@ -152,9 +152,18 @@ candidates by link in SQL, then checks each with `concerns()`.
 
 The form's objects section (`TargetFieldsMixin`) has one field per kind
 and mode, named `include__<app>__<model>` or `exclude__<app>__<model>`.
-**Add objects...** is an `HTMXSelect` that re-renders the section; a
-picker exists when it has values, the event links that kind, or it was
-just chosen.
+`target_boxes` sorts them into three boxes: criteria kinds (*Devices and
+VMs that match*), other included kinds (*Also include*) and excluded
+kinds (*Never include*). Each box has its own `HTMXSelect` menu
+(`add_match`, `add_include`, `add_exclude`) that re-renders the section;
+a picker exists when it has values, the event links that kind, or it was
+just chosen. `event_edit.html` and `inc/event_form.html` draw the form as
+NetBox does, except the objects section (`inc/targets.html`).
+
+Below the boxes, *This event concerns* is loaded from
+`EventTargetsPreviewView` whenever a field changes. It builds `Targets`
+from the pickers (`Targets(event, objects)`) for an unsaved event, so it
+reads the same rule as `concerns()` and `affected_devices()`.
 
 ## Migrations
 

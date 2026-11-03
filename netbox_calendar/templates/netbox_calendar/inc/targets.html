@@ -1,0 +1,46 @@
+{% load form_helpers %}
+{% load i18n %}
+{% comment %}
+The event form's objects: three boxes (TargetFieldsMixin.target_boxes), then
+a summary of what the event concerns. The summary reloads itself from
+event_targets_preview whenever a field of the form changes.
+{% endcomment %}
+<div class="field-group mb-5">
+  <div class="row">
+    <h2 class="col-9 offset-3">{% trans "Objects" %}</h2>
+  </div>
+  <div id="target_fields">
+    {% for box in form.target_boxes %}
+      <div class="calendar-target-box calendar-target-{{ box.key }} border rounded mb-3">
+        <div class="px-3 py-2 border-bottom">
+          <span class="badge calendar-target-number me-2">{{ forloop.counter }}</span>
+          <strong>{{ box.title }}</strong>
+          <div class="small text-secondary">{{ box.help }}</div>
+        </div>
+        <div class="px-3 pt-3">
+          {% for field in box.fields %}
+            {% render_field field %}
+          {% endfor %}
+          {% render_field box.menu %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  <div id="target_summary" class="row">
+    <div class="col offset-3"
+         hx-get="{% url 'plugins:netbox_calendar:event_targets_preview' %}"
+         hx-trigger="load, change from:#form_fields delay:400ms"
+         hx-include="#form_fields" hx-swap="innerHTML">
+      <div class="text-secondary small">{% trans "Working out what the event concerns..." %}</div>
+    </div>
+  </div>
+</div>
+<style>
+  .calendar-target-box { border-left-width: 4px !important; }
+  .calendar-target-match { border-left-color: var(--tblr-blue) !important; }
+  .calendar-target-include { border-left-color: var(--tblr-green) !important; }
+  .calendar-target-exclude { border-left-color: var(--tblr-red) !important; }
+  .calendar-target-match .calendar-target-number { background-color: var(--tblr-blue); color: #fff; }
+  .calendar-target-include .calendar-target-number { background-color: var(--tblr-green); color: #fff; }
+  .calendar-target-exclude .calendar-target-number { background-color: var(--tblr-red); color: #fff; }
+</style>
