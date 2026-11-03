@@ -1,0 +1,188 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load plugins %}
+{% load i18n %}
+
+{% block extra_controls %}
+  <a href="{% url 'plugins:netbox_calendar:event_ics' pk=object.pk %}" class="btn btn-outline-primary"
+     title="{% trans 'Download as an .ics file for Outlook or another calendar' %}">
+    <i class="mdi mdi-calendar-export"></i> {% trans "Add to Calendar" %}
+  </a>
+{% endblock %}
+
+{% block content %}
+{% for other, occurrence in conflicts %}
+  <div class="alert alert-warning" role="alert">
+    <i class="mdi mdi-alert"></i>
+    {% blocktrans with link=other|linkify start=occurrence.start|date:"SHORT_DATETIME_FORMAT" %}Overlaps with {{ link }} ({{ start }}) on a shared object.{% endblocktrans %}
+  </div>
+{% endfor %}
+<div class="row mb-3">
+  <div class="col col-md-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Event" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Title" %}</th><td>{{ object.title }}</td></tr>
+        <tr>
+          <th scope="row">{% trans "Type" %}</th>
+          <td>{% badge object.event_type hex_color=object.event_type.color url=object.event_type.get_absolute_url %}</td>
+        </tr>
+        <tr><th scope="row">{% trans "Status" %}</th><td>{% badge object.get_status_display bg_color=object.get_status_color %}</td></tr>
+        <tr><th scope="row">{% trans "Impact" %}</th><td>{% badge object.get_impact_display bg_color=object.get_impact_color %}</td></tr>
+        <tr><th scope="row">{% trans "Owner" %}</th><td>{{ object.event_owner|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Description" %}</th><td>{{ object.description|placeholder }}</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "When" %}</h2>
+      <table class="table table-hover attr-table">
+        {% if object.all_day %}
+          <tr><th scope="row">{% trans "First day" %}</th><td>{{ object.start|date:"DATE_FORMAT" }}</td></tr>
+          <tr><th scope="row">{% trans "Last day" %}</th><td>{{ last_day|date:"DATE_FORMAT" }}</td></tr>
+        {% else %}
+          <tr><th scope="row">{% trans "Start" %}</th><td>{{ object.start|date:"DATETIME_FORMAT" }}</td></tr>
+          <tr><th scope="row">{% trans "End" %}</th><td>{{ object.end|date:"DATETIME_FORMAT" }}</td></tr>
+          <tr><th scope="row">{% trans "Duration" %}</th><td>{{ object.duration_text }}</td></tr>
+        {% endif %}
+        <tr>
+          <th scope="row">{% trans "Repeats" %}</th>
+          <td>
+            {% if object.rrule %}
+              {{ object.recurrence_text }}<div class="small text-secondary font-monospace">{{ object.rrule }}</div>
+            {% else %}<span class="text-secondary">{% trans "Once" %}</span>{% endif %}
+          </td>
+        </tr>
+        {% if object.rrule %}
+          <tr>
+            <th scope="row">{% trans "Next" %}</th>
+            <td>{% if next_occurrence %}{{ next_occurrence.start|date:"DATETIME_FORMAT" }}{% else %}<span class="text-secondary">{% trans "None, the series has ended" %}</span>{% endif %}</td>
+          </tr>
+        {% endif %}
+        <tr>
+          <th scope="row">{% trans "Reminders" %}</th>
+          <td>{{ reminders_text|default:_("none") }} {% if not reminders_own %}<span class="text-secondary small">({% trans "from the event type" %})</span>{% endif %}</td>
+        </tr>
+      </table>
+    </div>
+    {% if object.rrule %}
+      <div class="card">
+        <h2 class="card-header">{% trans "Upcoming Occurrences" %}</h2>
+        <table class="table table-hover">
+          {% for occurrence in upcoming %}
+            <tr>
+              <td>{{ occurrence.start|date:"D j M Y H:i" }}</td>
+              <td class="text-end">
+                {% if can_edit %}
+                  <form method="post" action="{% url 'plugins:netbox_calendar:event_skip' pk=object.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="occurrence" value="{{ occurrence.start.isoformat }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="{% trans 'Call off this one occurrence' %}">{% trans "Skip" %}</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td class="text-secondary">{% trans "None" %}</td></tr>
+          {% endfor %}
+          {% for moment in skipped %}
+            <tr class="text-secondary">
+              <td><s>{{ moment|date:"D j M Y H:i" }}</s> {% trans "skipped" %}</td>
+              <td class="text-end">
+                {% if can_edit %}
+                  <form method="post" action="{% url 'plugins:netbox_calendar:event_skip' pk=object.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="occurrence" value="{{ moment.isoformat }}">
+                    <input type="hidden" name="restore" value="1">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">{% trans "Bring back" %}</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
+    {% endif %}
+    {% include 'inc/panels/tags.html' %}
+    {% plugin_left_page object %}
+  </div>
+  <div class="col col-md-6">
+    <div class="card">
+      <h2 class="card-header d-flex justify-content-between align-items-center">
+        <span>{% trans "Objects" %} <span class="badge text-bg-secondary">{{ objects_total }}</span></span>
+        {% if can_edit %}
+          <a href="{% url 'plugins:netbox_calendar:event_link' pk=object.pk %}" class="btn btn-sm btn-primary">
+            <i class="mdi mdi-link-variant-plus"></i> {% trans "Link Objects" %}
+          </a>
+        {% endif %}
+      </h2>
+      <table class="table table-hover">
+        {% for link in object.links.all %}
+          <tr>
+            <td class="text-secondary small">{{ link.object_type.name|bettertitle }}</td>
+            <td>{% if link.object %}{{ link.object|linkify }}{% else %}<s>{{ link.object_repr }}</s> <span class="small text-secondary">({% trans "deleted" %})</span>{% endif %}</td>
+            <td class="text-end">
+              {% if can_edit %}
+                <form method="post" action="{% url 'plugins:netbox_calendar:event_unlink' pk=object.pk link_pk=link.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-danger" title="{% trans 'Unlink' %}"><i class="mdi mdi-link-variant-off"></i></button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        {% if object.filter_object_type %}
+          <tr>
+            <td class="text-secondary small">{% trans "Filter" %}</td>
+            <td colspan="2">
+              {{ object.filter_object_type.name|bettertitle }}: <span class="font-monospace">{{ object.filter_query }}</span>
+              <div class="small text-secondary">{% blocktrans count count=filter_count %}{{ count }} object matches now{% plural %}{{ count }} objects match now{% endblocktrans %}</div>
+            </td>
+          </tr>
+        {% endif %}
+        {% if not object.links.all and not object.filter_object_type %}
+          <tr><td class="text-secondary">{% trans "No objects linked." %}</td></tr>
+        {% endif %}
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header d-flex justify-content-between align-items-center">
+        {% trans "People" %}
+        {% if can_edit %}
+          <a href="{% url 'plugins:netbox_calendar:event_person_add' pk=object.pk %}" class="btn btn-sm btn-primary">
+            <i class="mdi mdi-account-plus"></i> {% trans "Add Person" %}
+          </a>
+        {% endif %}
+      </h2>
+      <table class="table table-hover">
+        {% if object.event_owner %}
+          <tr><td class="text-secondary small">{% trans "Owner" %}</td><td>{{ object.event_owner.get_full_name|default:object.event_owner.username }}</td><td></td></tr>
+        {% endif %}
+        {% for person in people %}
+          <tr>
+            <td class="text-secondary small">{{ person.role }}</td>
+            <td>
+              {% if person.contact %}{{ person.contact|linkify }}{% else %}{{ person.person_name }}{% endif %}
+              {% if person.email %}<span class="small text-secondary">{{ person.email }}</span>{% endif %}
+            </td>
+            <td class="text-end text-nowrap">
+              {% if can_edit %}
+                <a href="{% url 'plugins:netbox_calendar:event_person_edit' pk=object.pk person_pk=person.pk %}" class="btn btn-sm btn-outline-secondary" title="{% trans 'Change role' %}"><i class="mdi mdi-pencil"></i></a>
+                <form method="post" action="{% url 'plugins:netbox_calendar:event_person_delete' pk=object.pk person_pk=person.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-danger" title="{% trans 'Remove' %}"><i class="mdi mdi-account-remove"></i></button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          {% if not object.event_owner %}<tr><td class="text-secondary">{% trans "Nobody yet." %}</td></tr>{% endif %}
+        {% endfor %}
+      </table>
+    </div>
+    {% include 'inc/panels/custom_fields.html' %}
+    {% include 'inc/panels/comments.html' %}
+    {% plugin_right_page object %}
+  </div>
+</div>
+{% plugin_full_width_page object %}
+{% endblock %}

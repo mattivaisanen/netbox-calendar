@@ -1,0 +1,75 @@
+{% extends 'generic/_base.html' %}
+{% load helpers %}
+{% load i18n %}
+
+{% block title %}{% if past %}{% trans "Past Events" %}{% else %}{% trans "Timeline" %}{% endif %}{% endblock %}
+
+{% block subtitle %}
+  <div class="text-secondary">
+    {% if past %}
+      {% blocktrans %}The last {{ days }} days, newest first.{% endblocktrans %}
+      <a href="?{{ query }}">{% trans "Show upcoming" %}</a>
+    {% else %}
+      {% blocktrans %}Running now and the next {{ days }} days.{% endblocktrans %}
+      <a href="?past=true{% if query %}&{{ query }}{% endif %}">{% trans "Show past" %}</a>
+    {% endif %}
+  </div>
+{% endblock %}
+
+{% block controls %}
+  <div class="btn-list">{% include 'netbox_calendar/inc/calendar_nav.html' %}</div>
+{% endblock %}
+
+{% block content %}
+{% include 'netbox_calendar/inc/filters.html' with keep=keep_timeline %}
+
+{% for day, entries in groups %}
+  <div class="card mb-2">
+    <h2 class="card-header{% if day == today %} text-primary{% endif %}">
+      {{ day|date:"l j F Y" }}{% if day == today %} · {% trans "Today" %}{% endif %}
+    </h2>
+    <div class="list-group list-group-flush">
+      {% for entry in entries %}
+        <a href="{{ entry.url }}" class="list-group-item list-group-item-action{% if entry.is_cancelled %} opacity-50{% endif %}">
+          <div class="row align-items-center">
+            <div class="col-auto">
+              <span class="badge" style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};">
+                {% if entry.icon %}<i class="mdi mdi-{{ entry.icon }}"></i> {% endif %}{{ entry.type_name }}
+              </span>
+            </div>
+            <div class="col-2 text-secondary small text-nowrap">
+              {% if entry.all_day %}
+                {% trans "All day" %}{% if entry.last_day != day %} – {{ entry.last_day|date:"j M" }}{% endif %}
+              {% else %}
+                {{ entry.start|date:"H:i" }} – {% if entry.end|date:"Ymd" != entry.start|date:"Ymd" %}{{ entry.end|date:"j M H:i" }}{% else %}{{ entry.end|date:"H:i" }}{% endif %}
+              {% endif %}
+            </div>
+            <div class="col">
+              <span class="fw-bold{% if entry.is_cancelled %} text-decoration-line-through{% endif %}">{{ entry.title }}</span>
+              {% if entry.is_running %}<span class="badge text-bg-orange ms-1">{% trans "Running" %}</span>{% endif %}
+              {% if entry.event %}
+                <div class="small text-secondary text-truncate">
+                  {% for link in entry.event.links.all|slice:":5" %}{{ link.object_repr }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                </div>
+              {% endif %}
+            </div>
+            <div class="col-auto">
+              {% if entry.status_label %}<span class="badge text-bg-secondary">{{ entry.status_label }}</span>{% endif %}
+              {% if entry.impact == 'outage' %}<span class="badge text-bg-red">{% trans "Outage" %}</span>
+              {% elif entry.impact == 'degraded' %}<span class="badge text-bg-yellow">{% trans "Degraded" %}</span>{% endif %}
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+{% empty %}
+  <div class="card"><div class="card-body text-secondary">{% trans "Nothing scheduled in this range." %}</div></div>
+{% endfor %}
+
+<div class="text-center my-3">
+  <a class="btn btn-outline-secondary" href="?days={{ more_days }}{% if past %}&past=true{% endif %}{% if query %}&{{ query }}{% endif %}">
+    {% if past %}{% trans "Further back" %}{% else %}{% trans "Further ahead" %}{% endif %}
+  </a>
+</div>
+{% endblock %}

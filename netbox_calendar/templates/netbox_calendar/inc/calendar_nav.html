@@ -1,0 +1,20 @@
+{% load i18n %}
+{# Switch between the calendar pages, keeping the filters. #}
+<div class="btn-group" role="group" aria-label="{% trans 'Calendar views' %}">
+  <a href="{% url 'plugins:netbox_calendar:month' %}{% if query %}?{{ query }}{% endif %}"
+     class="btn {% if active_tab == 'month' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+    <i class="mdi mdi-calendar-month-outline"></i> {% trans "Month" %}
+  </a>
+  <a href="{% url 'plugins:netbox_calendar:timeline' %}{% if query %}?{{ query }}{% endif %}"
+     class="btn {% if active_tab == 'timeline' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+    <i class="mdi mdi-timeline-text-outline"></i> {% trans "Timeline" %}
+  </a>
+  <a href="{% url 'plugins:netbox_calendar:event_list' %}{% if query %}?{{ query }}{% endif %}" class="btn btn-outline-primary">
+    <i class="mdi mdi-format-list-bulleted"></i> {% trans "List" %}
+  </a>
+</div>
+{% if perms.netbox_calendar.add_event %}
+  <a href="{% url 'plugins:netbox_calendar:event_add' %}" class="btn btn-primary">
+    <i class="mdi mdi-plus-thick"></i> {% trans "Add Event" %}
+  </a>
+{% endif %}

@@ -1,0 +1,16 @@
+{% load i18n %}
+{# Opens the add-event form with the rows ticked in the table below linked; with none ticked, an empty form. #}
+<a href="{{ add_url }}" class="btn btn-outline-primary" id="nbcal-schedule-selected"
+   title="{% trans 'Schedule an event for the selected objects' %}">
+  <i class="mdi mdi-calendar-plus"></i> {% trans "Schedule Event" %}
+</a>
+<script>
+  document.getElementById('nbcal-schedule-selected').addEventListener('click', function (event) {
+    var ticked = document.querySelectorAll('input[name="pk"]:checked');
+    if (!ticked.length) { return; }
+    event.preventDefault();
+    var url = this.getAttribute('href');
+    ticked.forEach(function (box) { url += '&link_objects=' + encodeURIComponent(box.value); });
+    window.location.href = url;
+  });
+</script>

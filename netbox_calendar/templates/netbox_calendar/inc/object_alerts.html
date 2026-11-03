@@ -1,0 +1,7 @@
+{% load i18n %}
+{% for entry in running %}
+  <div class="alert {% if entry.impact == 'outage' %}alert-danger{% elif entry.impact == 'degraded' %}alert-warning{% else %}alert-info{% endif %}" role="alert">
+    <i class="mdi mdi-calendar-clock"></i>
+    {% blocktrans with type=entry.type_name end=entry.end|date:"SHORT_DATETIME_FORMAT" url=entry.url title=entry.title %}{{ type }} until {{ end }}: <a href="{{ url }}">{{ title }}</a>{% endblocktrans %}
+  </div>
+{% endfor %}

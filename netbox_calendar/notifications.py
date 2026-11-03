@@ -1,0 +1,282 @@
+"""
+Telling people about events: NetBox's own notifications (the bell), a
+NetBox event that Event Rules can turn into an e-mail, Teams message or any
+other webhook, and optionally a direct e-mail with a calendar invite.
+
+What is sent about is set per event type (EventType.notify_on): an event
+scheduled, changed or cancelled (signals.py, after the database commit),
+and reminders, starts and ends (jobs.py, the background job).
+
+Who hears is also set per event type: the owner, people on the event whose
+role is notified, a NetBox group, users subscribed to a linked object, and
+contacts assigned to a linked object (e-mail only). Whoever made a change
+is not told about their own change.
+"""
+import logging
+from datetime import timedelta
+
+from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
+from django.core.mail import EmailMultiAlternatives
+from django.utils import formats, timezone
+from django.utils.translation import gettext_lazy as _
+
+from core.models import ObjectType
+from extras.events import EventContext, flush_events
+from extras.models import Notification, Subscription
+from netbox.events import EventType
+from netbox.registry import registry
+from tenancy.models import ContactAssignment
+
+from . import ical, message_template
+from .choices import NoticeChoices
+from .lookup import linked_objects
+from .models import EventObject
+from .plugin_settings import get_setting, on
+
+logger = logging.getLogger('netbox_calendar.notifications')
+
+#: NetBox event type names, one per notice.
+EVENT_TYPES = {
+    NoticeChoices.SCHEDULED: ('netbox_calendar.scheduled', _('Event scheduled'), 'info'),
+    NoticeChoices.CHANGED: ('netbox_calendar.changed', _('Event changed'), 'warning'),
+    NoticeChoices.CANCELLED: ('netbox_calendar.cancelled', _('Event cancelled'), 'danger'),
+    NoticeChoices.REMINDER: ('netbox_calendar.reminder', _('Event reminder'), 'info'),
+    NoticeChoices.STARTED: ('netbox_calendar.started', _('Event started'), 'warning'),
+    NoticeChoices.ENDED: ('netbox_calendar.ended', _('Event ended'), 'success'),
+}
+
+
+def register_event_types():
+    class TranslatedEventType(EventType):
+        # NetBox prints an event with str(event); a lazy translation must be
+        # made plain text first, or the notification menu fails to load.
+        def __str__(self):
+            return str(self.text)
+
+    for name, text, kind in EVENT_TYPES.values():
+        if name not in registry['event_types']:
+            TranslatedEventType(name, text, kind=kind).register()
+
+
+def person(user):
+    """A user as webhook data."""
+    if user is None:
+        return None
+    return {
+        'id': user.pk,
+        'username': user.username,
+        'name': user.get_full_name() or user.username,
+        'email': user.email or '',
+    }
+
+
+def _linked_objects(event):
+    # A link to a deleted object comes back as its EventObject: left out.
+    objects, _total = linked_objects(event, limit=50)
+    return [obj for obj in objects if not isinstance(obj, EventObject)]
+
+
+def recipients(event, actor=None):
+    """
+    (users, contacts) to tell about `event`: active users, and
+    (name, e-mail) of contacts and people without a NetBox account.
+    `actor` (who made the change) is left out.
+    """
+    event_type = event.event_type
+    users, contacts = [], []
+    if event_type.notify_owner and event.event_owner is not None:
+        users.append(event.event_owner)
+    if event_type.notify_people:
+        for row in event.people.select_related('role', 'user', 'contact'):
+            if not row.role.notify:
+                continue
+            if row.user_id:
+                users.append(row.user)
+            elif row.contact.email:
+                contacts.append((str(row.contact), row.contact.email))
+    if event_type.notify_group_id:
+        users += list(event_type.notify_group.users.all())
+    if event_type.notify_subscribers or event_type.notify_contacts:
+        objects = _linked_objects(event)
+        keys = [(ContentType.objects.get_for_model(obj), obj.pk) for obj in objects]
+        if event_type.notify_subscribers:
+            for content_type, pk in keys:
+                users += [row.user for row in Subscription.objects.filter(
+                    object_type=content_type, object_id=pk,
+                ).select_related('user')]
+        if event_type.notify_contacts:
+            for content_type, pk in keys:
+                for row in ContactAssignment.objects.filter(
+                    object_type=content_type, object_id=pk,
+                ).select_related('contact'):
+                    if row.contact.email:
+                        contacts.append((str(row.contact), row.contact.email))
+
+    unique_users, seen = [], set()
+    for user in users:
+        if user.pk in seen or not user.is_active or (actor is not None and user.pk == actor.pk):
+            continue
+        seen.add(user.pk)
+        unique_users.append(user)
+    taken = {user.email.lower() for user in unique_users if user.email}
+    unique_contacts = []
+    for name, email in contacts:
+        if email.lower() not in taken:
+            taken.add(email.lower())
+            unique_contacts.append((name, email))
+    return unique_users, unique_contacts
+
+
+def when_text(event, start, end):
+    """"4 Nov 2026 22:00 - 23:30", or dates only for all-day events."""
+    start, end = timezone.localtime(start), timezone.localtime(end)
+    if event.all_day:
+        last = timezone.localtime(end - timedelta(seconds=1)).date()
+        first = start.date()
+        if first == last:
+            return formats.date_format(first)
+        return f'{formats.date_format(first)} - {formats.date_format(last)}'
+    if start.date() == end.date():
+        return f'{formats.date_format(start, "DATETIME_FORMAT")} - {formats.time_format(end)}'
+    return f'{formats.date_format(start, "DATETIME_FORMAT")} - {formats.date_format(end, "DATETIME_FORMAT")}'
+
+
+def event_data(event, kind, users, contacts, start, end, actor=None, offset=None):
+    """
+    Everything a message about the notice needs, for Event Rules
+    (conditions) and webhook body templates ({{ data.<key> }}).
+    """
+    objects = _linked_objects(event)
+    objects_text = ', '.join(str(obj) for obj in objects)
+    link = ical.absolute_url(event.get_absolute_url())
+    notice = str(EVENT_TYPES[kind][1])
+    context = {
+        'notice': notice,
+        'title': event.title,
+        'event_type': event.event_type.name,
+        'status': str(event.get_status_display()),
+        'impact': str(event.get_impact_display()) if event.impact != 'none' else '',
+        'start': formats.date_format(timezone.localtime(start), 'DATETIME_FORMAT'),
+        'end': formats.date_format(timezone.localtime(end), 'DATETIME_FORMAT'),
+        'when': when_text(event, start, end),
+        'objects': objects_text,
+        'owner': (person(event.event_owner) or {}).get('name', ''),
+        'by': (person(actor) or {}).get('name', ''),
+        'link': link,
+        'comment': event.description,
+    }
+    emails = [user.email for user in users if user.email] + [email for _name, email in contacts]
+    return {
+        'message': message_template.render(get_setting('message'), context),
+        'notice': kind,
+        'event': notice,
+        'id': event.pk,
+        'title': event.title,
+        'event_type': event.event_type.name,
+        'status': event.status,
+        'impact': event.impact,
+        'start': start.isoformat(),
+        'end': end.isoformat(),
+        'when': context['when'],
+        'all_day': event.all_day,
+        'recurrence': event.recurrence_text(),
+        'reminder_minutes': offset,
+        'link': link,
+        'url': event.get_absolute_url(),
+        'objects': [
+            {
+                'type': obj._meta.label_lower, 'id': obj.pk, 'name': str(obj),
+                'link': ical.absolute_url(obj.get_absolute_url()) if hasattr(obj, 'get_absolute_url') else '',
+            }
+            for obj in objects
+        ],
+        'owner': person(event.event_owner),
+        'people': [
+            {'role': row.role.name, 'name': row.person_name, 'email': row.email}
+            for row in event.people.select_related('role', 'user', 'contact')
+        ],
+        'by': person(actor),
+        'recipients': [person(user) for user in users],
+        'contacts': [{'name': name, 'email': email} for name, email in contacts],
+        'recipient_emails': ';'.join(emails),
+    }
+
+
+def notify(event, kind, start=None, end=None, actor=None, offset=None):
+    """
+    Send notice `kind` (a NoticeChoices value) about `event`, or about one
+    occurrence of it (`start`, `end`), if its event type asks for it.
+    Returns the number of people told.
+    """
+    if kind not in (event.event_type.notify_on or ()):
+        return 0
+    start = start or event.start
+    end = end or event.end
+    users, contacts = recipients(event, actor)
+    data = event_data(event, kind, users, contacts, start, end, actor, offset)
+    if users and on('notifications'):
+        _bell(event, kind, users)
+    # Event Rules run even when nobody is told directly, such as for a
+    # webhook that posts every event to a team channel.
+    _fire_event(event, kind, data, actor)
+    if (users or contacts) and on('direct_email') and event.event_type.send_email:
+        send_email(event, data, users, contacts)
+    return len(users) + len(contacts)
+
+
+def _bell(event, kind, users):
+    """A NetBox notification for each user, replacing their earlier one about the event."""
+    content_type = ContentType.objects.get_for_model(event)
+    for user in users:
+        Notification.objects.filter(object_type=content_type, object_id=event.pk, user=user).delete()
+        Notification.objects.create(
+            user=user, object_type=content_type, object_id=event.pk, event_type=EVENT_TYPES[kind][0],
+        )
+
+
+def _fire_event(event, kind, data, actor):
+    """Run NetBox Event Rules for this notice (webhooks, scripts, ...)."""
+    try:
+        context = EventContext(
+            object_type=ObjectType.objects.get_for_model(event),
+            object_id=event.pk,
+            object=event,
+            event_type=EVENT_TYPES[kind][0],
+            snapshots=None,
+            user=actor or event.event_owner,
+            data=data,
+        )
+        flush_events([context])
+    except Exception:
+        logger.exception('Event rules for event #%s failed', event.pk)
+
+
+def send_email(event, data, users, contacts):
+    """
+    E-mail the notice through NetBox's EMAIL settings, with the event as a
+    calendar invite (a cancelled event as a cancellation), so it lands in
+    Outlook as a meeting.
+    """
+    addresses = [(user.get_full_name() or user.username, user.email) for user in users if user.email]
+    addresses += list(contacts)
+    if not addresses:
+        return
+    method = 'CANCEL' if event.status == 'cancelled' else 'REQUEST'
+    organizer = None
+    if event.event_owner is not None and event.event_owner.email:
+        organizer = (event.event_owner.get_full_name() or event.event_owner.username, event.event_owner.email)
+    invite = ical.calendar(
+        [event], name=event.title, method=method, attendees=addresses, organizer=organizer,
+        describe=lambda _event: ', '.join(obj['name'] for obj in data['objects']),
+    )
+    subject = f'{data["event"]}: {event.title} ({data["when"]})'
+    message = EmailMultiAlternatives(
+        subject=subject[:250], body=data['message'], from_email=settings.SERVER_EMAIL,
+        to=[email for _name, email in addresses],
+    )
+    message.attach('event.ics', invite, f'text/calendar; method={method}; charset=UTF-8')
+    try:
+        message.send()
+    except Exception:
+        logger.exception('E-mail about event #%s could not be sent', event.pk)

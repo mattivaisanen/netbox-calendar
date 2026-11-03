@@ -1,0 +1,64 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+
+{% block title %}{{ shown|date:"F Y" }}{% endblock %}
+
+{% block controls %}
+  <div class="btn-list">{% include 'netbox_calendar/inc/calendar_nav.html' %}</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .nbcal-month { table-layout: fixed; }
+  .nbcal-month td { height: 7.5rem; vertical-align: top; padding: .25rem; }
+  .nbcal-month td.nbcal-other { background-color: var(--tblr-bg-surface-secondary); }
+  .nbcal-month td.nbcal-today { box-shadow: inset 0 0 0 2px var(--tblr-primary); }
+  .nbcal-day { font-size: .8rem; font-weight: 600; }
+  .nbcal-entry { font-size: .75rem; border-radius: .25rem; padding: 0 .3rem; margin-bottom: 2px; text-decoration: none; }
+  .nbcal-entry:hover { filter: brightness(.92); }
+</style>
+
+{% include 'netbox_calendar/inc/filters.html' with keep=keep_month %}
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <a class="btn btn-outline-secondary btn-sm" href="?year={{ previous.year }}&month={{ previous.month }}{% if query %}&{{ query }}{% endif %}">
+      <i class="mdi mdi-chevron-left"></i> {{ previous|date:"F" }}
+    </a>
+    <div class="d-flex gap-2 align-items-center">
+      <h2 class="card-title m-0">{{ shown|date:"F Y" }}</h2>
+      <a class="btn btn-sm btn-outline-primary" href="?year={{ today.year }}&month={{ today.month }}{% if query %}&{{ query }}{% endif %}">{% trans "Today" %}</a>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="?year={{ following.year }}&month={{ following.month }}{% if query %}&{{ query }}{% endif %}">
+      {{ following|date:"F" }} <i class="mdi mdi-chevron-right"></i>
+    </a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-bordered nbcal-month mb-0">
+      <thead>
+        <tr>{% for name in weekday_names %}<th class="text-center">{{ name }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for week in weeks %}
+          <tr>
+            {% for day in week %}
+              <td class="{% if not day.in_month %}nbcal-other{% endif %}{% if day.is_today %} nbcal-today{% endif %}">
+                <div class="d-flex justify-content-between">
+                  <span class="nbcal-day{% if not day.in_month %} text-secondary{% endif %}">{{ day.date|date:"j" }}</span>
+                  {% if perms.netbox_calendar.add_event %}
+                    <a class="text-secondary small" href="{% url 'plugins:netbox_calendar:event_add' %}?start={{ day.date|date:'Y-m-d' }} 09:00:00"
+                       title="{% trans 'Add an event on this day' %}"><i class="mdi mdi-plus"></i></a>
+                  {% endif %}
+                </div>
+                {% for entry in day.entries %}
+                  {% include 'netbox_calendar/inc/entry.html' %}
+                {% endfor %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends 'generic/_base.html' %}
+{% load form_helpers %}
+{% load i18n %}
+
+{% block title %}{% blocktrans with event=object %}Link objects to {{ event }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<form method="post" class="form-object-edit mt-3">
+  {% csrf_token %}
+  <div id="form_fields" hx-disinherit="hx-select hx-swap">
+    {% render_form form %}
+  </div>
+  <div class="text-end my-3">
+    <a href="{{ object.get_absolute_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+    <button type="submit" class="btn btn-primary">{% trans "Link" %}</button>
+  </div>
+</form>
+{% endblock %}
