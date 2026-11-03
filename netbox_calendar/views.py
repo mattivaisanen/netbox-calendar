@@ -38,7 +38,7 @@ class EventTypeView(generic.ObjectView):
     queryset = EventType.objects.all()
 
     def get_extra_context(self, request, instance):
-        return {'reminders_text': forms.format_minutes(instance.reminders)}
+        return {'reminders_text': forms.describe_minutes(instance.reminders)}
 
 
 @register_model_view(EventType, 'add', detail=False)
@@ -190,7 +190,7 @@ class EventView(generic.ObjectView):
             'upcoming': upcoming,
             'next_occurrence': instance.next_occurrence(now),
             'skipped': sorted(instance.skipped or ()),
-            'reminders_text': forms.format_minutes(instance.effective_reminders()),
+            'reminders_text': forms.describe_minutes(instance.effective_reminders()),
             'reminders_own': instance.reminders is not None,
             'conflicts': conflicts(instance, request.user),
             'can_edit': can_edit(request.user, instance),

@@ -7,6 +7,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
 
 from circuits.models import Circuit
 from core.models import ObjectType
@@ -91,16 +92,87 @@ def format_minutes(values):
     return ', '.join(parts)
 
 
-class MinutesField(forms.CharField):
-    """A list of minutes typed as "1d, 2h, 30m"."""
+def describe_minutes(values):
+    """[1440, 90] -> "1 day, 1 hour 30 minutes", for pages and choice labels."""
+    names = (
+        ('w', lambda n: ngettext('%(n)d week', '%(n)d weeks', n)),
+        ('d', lambda n: ngettext('%(n)d day', '%(n)d days', n)),
+        ('h', lambda n: ngettext('%(n)d hour', '%(n)d hours', n)),
+        ('m', lambda n: ngettext('%(n)d minute', '%(n)d minutes', n)),
+    )
+    texts = []
+    for value in values or ():
+        parts = []
+        for unit, name in names:
+            count, value = divmod(value, UNITS[unit])
+            if count:
+                parts.append(name(count) % {'n': count})
+        texts.append(' '.join(parts) or _('at the start'))
+    return ', '.join(texts)
 
-    def prepare_value(self, value):
-        if isinstance(value, (list, tuple)):
-            return format_minutes(value)
-        return value
 
-    def clean(self, value):
-        return parse_minutes(super().clean(value))
+#: Reminder times offered as tick boxes, in minutes before the start.
+REMINDER_PRESETS = (15, 30, 60, 120, 1440, 2 * 1440, 10080)
+
+#: Where an event's reminders come from.
+REMINDERS_FROM_TYPE = 'type'
+REMINDERS_OWN = 'own'
+REMINDERS_NONE = 'none'
+REMINDER_SOURCE_CHOICES = (
+    (REMINDERS_FROM_TYPE, _("Same as the event type")),
+    (REMINDERS_OWN, _('Pick for this event')),
+    (REMINDERS_NONE, _('No reminders')),
+)
+
+
+def initial_minutes(value):
+    """Minutes passed in a URL ("60" or a list of strings) as a list; None when empty or unreadable."""
+    if isinstance(value, str):
+        value = value.split(',')
+    try:
+        return [int(v) for v in value if str(v).strip()] or None
+    except (TypeError, ValueError):
+        return None
+
+
+class ReminderFieldsMixin:
+    """
+    Reminders as tick boxes for common times, plus a text box for any
+    other time ("3d, 45m"). Both together make the stored list of minutes.
+    """
+    def setup_reminder_fields(self, values):
+        """Fill the two fields from stored `values` (minutes), unless the form is bound."""
+        if self.is_bound or values is None:
+            return
+        self.initial.setdefault('reminder_presets', [str(v) for v in values if v in REMINDER_PRESETS])
+        other = [v for v in values if v not in REMINDER_PRESETS]
+        self.initial.setdefault('reminder_other', format_minutes(other) if other else '')
+
+    def clean_reminder_other(self):
+        return parse_minutes(self.cleaned_data.get('reminder_other')) or []
+
+    def picked_reminders(self):
+        """The ticked and typed times as one list of minutes, longest first."""
+        picked = {int(v) for v in self.cleaned_data.get('reminder_presets') or ()}
+        picked.update(self.cleaned_data.get('reminder_other') or ())
+        return sorted(picked, reverse=True)
+
+
+def reminder_preset_field():
+    """Tick boxes for the common reminder times."""
+    return forms.MultipleChoiceField(
+        # A callable, so the labels are translated per request.
+        choices=lambda: [(str(v), describe_minutes([v])) for v in REMINDER_PRESETS], required=False,
+        label=_('Before the start'), widget=forms.CheckboxSelectMultiple,
+    )
+
+
+def reminder_other_field():
+    """A text box for any reminder time not among the tick boxes."""
+    return forms.CharField(
+        required=False, label=_('Other times'),
+        help_text=_('Any other times before the start, such as "3d, 45m" (w, d, h, m).'),
+    )
 
 
 def linkable_types():
@@ -169,23 +241,22 @@ class LinkFieldsMixin:
 # Event types and roles
 #
 
-class EventTypeForm(NetBoxModelForm):
+class EventTypeForm(ReminderFieldsMixin, NetBoxModelForm):
     slug = SlugField()
     color = ColorField(label=_('Color'))
     notify_on = forms.MultipleChoiceField(
         choices=NoticeChoices, required=False, label=_('Notify on'), widget=forms.CheckboxSelectMultiple,
         help_text=_('What people are told about. None ticked: nothing.'),
     )
-    reminders = MinutesField(
-        required=False, label=_('Reminders'),
-        help_text=_('Before the start, such as "1d, 1h" (w, d, h, m). Empty or "none": no reminders.'),
-    )
+    reminder_presets = reminder_preset_field()
+    reminder_other = reminder_other_field()
     notify_group = DynamicModelChoiceField(queryset=Group.objects.all(), required=False, label=_('Notify group'))
 
     fieldsets = (
         FieldSet('name', 'slug', 'color', 'icon', 'description', 'default_duration', 'change_freeze', 'tags',
                  name=_('Event type')),
-        FieldSet('notify_on', 'reminders', name=_('When')),
+        FieldSet('notify_on', name=_('When')),
+        FieldSet('reminder_presets', 'reminder_other', name=_('Reminders')),
         FieldSet('notify_owner', 'notify_people', 'notify_group', 'notify_subscribers', 'notify_contacts',
                  'send_email', name=_('Who')),
     )
@@ -194,12 +265,19 @@ class EventTypeForm(NetBoxModelForm):
         model = EventType
         fields = (
             'name', 'slug', 'color', 'icon', 'description', 'default_duration', 'change_freeze', 'notify_on',
-            'reminders', 'notify_owner', 'notify_people', 'notify_group', 'notify_subscribers', 'notify_contacts',
+            'notify_owner', 'notify_people', 'notify_group', 'notify_subscribers', 'notify_contacts',
             'send_email', 'tags',
         )
 
-    def clean_reminders(self):
-        return self.cleaned_data['reminders'] or []
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setup_reminder_fields(self.instance.reminders if self.instance.pk else None)
+
+    def clean(self):
+        super().clean()
+        # Nothing ticked or typed: no reminders for events of this type.
+        self.instance.reminders = self.picked_reminders()
+        return self.cleaned_data
 
 
 class EventTypeFilterForm(NetBoxModelFilterSetForm):
@@ -272,7 +350,7 @@ class EventRoleImportForm(NetBoxModelImportForm):
 # Events
 #
 
-class EventForm(LinkFieldsMixin, NetBoxModelForm):
+class EventForm(ReminderFieldsMixin, LinkFieldsMixin, NetBoxModelForm):
     """
     Add or edit an event. Besides the event's own fields it has one picker
     per common object type (LINK_FIELDS), filled with what is linked now:
@@ -307,10 +385,12 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
     repeat_count = forms.IntegerField(
         min_value=1, required=False, label=_('Times'), help_text=_('Instead of an end date: how many times.'),
     )
-    reminders = MinutesField(
-        required=False, label=_('Reminders'),
-        help_text=_('Before each start, such as "1d, 1h". Empty: the event type\'s. "none": no reminders.'),
+    reminder_source = forms.ChoiceField(
+        choices=REMINDER_SOURCE_CHOICES, required=False, initial=REMINDERS_FROM_TYPE, label=_('Reminders'),
+        widget=HTMXSelect(hx_target_id='reminder_fields'),
     )
+    reminder_presets = reminder_preset_field()
+    reminder_other = reminder_other_field()
 
     # One picker per entry of LINK_FIELDS is added in __init__().
     link_type = ContentTypeChoiceField(
@@ -347,14 +427,15 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
         FieldSet('link_type', 'link_objects', name=_('Other objects'), html_id='other_link_fields'),
         FieldSet('filter_object_type', 'filter_query', name=_('Objects by filter')),
         FieldSet('people_role', 'people_users', 'people_contacts', name=_('Add people')),
-        FieldSet('reminders', name=_('Notifications')),
+        FieldSet('reminder_source', 'reminder_presets', 'reminder_other', name=_('Notifications'),
+                 html_id='reminder_fields'),
     )
 
     class Meta:
         model = Event
         fields = (
             'title', 'event_type', 'status', 'impact', 'event_owner', 'description', 'start', 'end', 'all_day', 'rrule',
-            'reminders', 'filter_object_type', 'filter_query', 'comments', 'tags',
+            'filter_object_type', 'filter_query', 'comments', 'tags',
         )
 
     def __init__(self, *args, **kwargs):
@@ -383,6 +464,21 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
             # An all-day event is stored up to the midnight after its last day; show the last day.
             if instance.all_day and 'end' not in self.initial:
                 self.initial['end'] = timezone.localtime(instance.end) - timedelta(days=1)
+
+        # Reminders: from the event type, picked for this event, or none.
+        reminders = instance.reminders
+        if not instance.pk and 'reminders' in self.initial:
+            # A cloned event brings its own reminders along in the URL.
+            reminders = initial_minutes(self.initial.pop('reminders'))
+        if not self.is_bound and 'reminder_source' not in self.initial:
+            self.initial['reminder_source'] = (
+                REMINDERS_FROM_TYPE if reminders is None else REMINDERS_OWN if reminders else REMINDERS_NONE
+            )
+        self.setup_reminder_fields(reminders)
+        if get_field_value(self, 'reminder_source') != REMINDERS_OWN:
+            # The tick boxes only matter when picking reminders for this event.
+            self.fields.pop('reminder_presets')
+            self.fields.pop('reminder_other')
 
         # Only the fields the chosen kind of repeat uses.
         repeat = get_field_value(self, 'repeat') or recurrence.NONE
@@ -448,6 +544,14 @@ class EventForm(LinkFieldsMixin, NetBoxModelForm):
             self.instance.rrule = data['rrule']
             if data.get('repeat_until') and data.get('repeat_count'):
                 self.add_error('repeat_count', _('Give an end date or a number of times, not both.'))
+
+        source = data.get('reminder_source') or REMINDERS_FROM_TYPE
+        if source == REMINDERS_OWN:
+            self.instance.reminders = self.picked_reminders()
+            if not self.instance.reminders and 'reminder_presets' in self.fields:
+                self.add_error('reminder_presets', _('Tick or type at least one time, or choose "No reminders".'))
+        else:
+            self.instance.reminders = None if source == REMINDERS_FROM_TYPE else []
 
         if data.get('link_type') and not data.get('link_objects') and 'link_objects' in self.fields:
             self.add_error('link_objects', _('Pick the objects to link, or clear the type.'))

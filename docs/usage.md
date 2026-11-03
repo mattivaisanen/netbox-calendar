@@ -34,7 +34,7 @@ object's Events card, or **Schedule Event** above an object list.
 | All day | Whole days in NetBox's time zone. End is then the last day. |
 | Owner | Empty on a new event: you. Notified, and may always edit. |
 | Repeat | See [Repeating events](#repeating-events). |
-| Reminders | Times before each start, such as `2d, 4h, 15m`. Empty: the type's reminders. `none`: no reminders. |
+| Reminders | *Same as the event type*, *No reminders*, or *Pick for this event*: tick common times (15 minutes to 1 week before) and type any others in **Other times**, such as `3d, 45m`. |
 | Devices, Sites, Device roles, ... | What the event affects, one picker per kind of object. See [Objects](#objects). |
 | Other objects | Any other kind of object, such as interfaces or prefixes. |
 | Objects by filter | Rarely needed; see [Events by filter](#events-by-filter). |

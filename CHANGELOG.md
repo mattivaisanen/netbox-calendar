@@ -10,6 +10,10 @@
   covers its devices, like sites and locations already did.
 - The event page lists every affected device.
 - Unlinking an object from the event page asks to confirm first.
+- Reminders are set with tick boxes for common times (15 minutes to
+  1 week before) plus a box for any other time. On an event, pick whether
+  it uses the event type's reminders, its own, or none. Event and event
+  type pages show reminder times in words.
 
 ## 0.1.1 (2026-11-03)
 
