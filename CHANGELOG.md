@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Objects on an event combine as a rule: different kinds AND together
+  (a device role and a location: that role's devices in that location),
+  several of one kind OR together. Devices and VMs picked one by one are
+  always included. **Existing events with several kinds linked now cover
+  fewer devices**; check their Affected Devices.
+- Objects can be excluded: an excluded location, role or device leaves
+  those devices out (`exclude` on event objects in the API).
+- The event form's objects section shows only the kinds in use, with an
+  **Add objects...** menu to match, include or exclude another kind.
+- Affected devices, object pages, conflict warnings, notifications
+  (subscribers, contacts, `objects_text`, `excluded`, `devices`) and the
+  iCal feed follow the rule.
 - Upcoming Events widget: the start time now sits on the same line as the event title.
 - The event form has one picker per kind of object (devices, sites, device
   roles, ...) and shows what is already linked when editing. Removing an

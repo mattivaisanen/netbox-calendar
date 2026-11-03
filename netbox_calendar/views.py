@@ -2,6 +2,7 @@ import secrets
 from datetime import date, datetime, timedelta
 
 from django.contrib import messages
+from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
@@ -11,12 +12,13 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views.generic import View
 
+from dcim.models import Device
 from netbox.views import generic
 from utilities.htmx import htmx_partial
 from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
 from . import agenda, filtersets, forms, ical, plugin_settings, tables
-from .lookup import affected_devices, filtered_objects, linked_objects
+from .lookup import DEVICE_MATCHES, Targets, affected_devices, describe, filtered_objects
 from .models import Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting
 from .permissions import can_edit, editable
 
@@ -139,30 +141,64 @@ class EventListView(generic.ObjectListView):
     table = tables.EventTable
 
 
+def _same_targets(event, other, devices):
+    """Whether two events concern a same object: one picked by both, or a device both affect."""
+    keys = set(event.links.filter(exclude=False).values_list('object_type_id', 'object_id'))
+    shared = other.links.filter(exclude=False).values_list('object_type_id', 'object_id', 'object_type__app_label',
+                                                           'object_type__model')
+    for type_id, object_id, app_label, model in shared:
+        # A shared site or role alone is no clash: their devices are compared below.
+        if (type_id, object_id) in keys and f'{app_label}.{model}' not in DEVICE_MATCHES:
+            return True
+    return devices.filter(pk__in=affected_devices(other).values('pk')).exists()
+
+
 def conflicts(event, user):
     """
     [(other event, occurrence)] overlapping this event's next occurrence
-    on a shared object (linked directly), for the conflict warning.
+    on a shared object: one both pick, or a device both affect.
     """
     if not plugin_settings.on('conflict_warnings'):
         return []
     occurrence = event.next_occurrence()
     if occurrence is None:
         return []
-    keys = list(event.links.values_list('object_type_id', 'object_id'))
+    devices = affected_devices(event)
+    # Candidates: events linking something this one links, or one of its devices.
+    keys = list(event.links.filter(exclude=False).values_list('object_type_id', 'object_id'))
+    device_type = ContentType.objects.get_for_model(Device)
+    keys += [(device_type.pk, pk) for pk in devices.values_list('pk', flat=True)[:DEVICES_SHOWN]]
     if not keys:
         return []
 
     condition = Q()
     for type_id, object_id in keys:
-        condition |= Q(links__object_type_id=type_id, links__object_id=object_id)
+        condition |= Q(links__object_type_id=type_id, links__object_id=object_id, links__exclude=False)
     others = Event.objects.restrict(user, 'view').exclude(pk=event.pk).exclude(status='cancelled').filter(condition)
     found = []
     for other in others.distinct().select_related('event_type'):
         overlapping = other.occurrences(occurrence.start, occurrence.end)
-        if overlapping:
+        if overlapping and _same_targets(event, other, devices):
             found.append((other, overlapping[0]))
     return found
+
+
+def target_groups(event):
+    """The event's links by kind for the Objects card: criteria, picked ones, then excluded ones."""
+    groups = {}
+    for link in event.links.select_related('object_type'):
+        label = forms.type_label(link.object_type)
+        model = link.object_type.model_class()
+        name = model._meta.verbose_name_plural if model else link.object_type.name
+        group = groups.setdefault((link.exclude, label), {
+            'name': _('Except {types}').format(types=name) if link.exclude else name[:1].upper() + name[1:],
+            'exclude': link.exclude,
+            'criterion': label in DEVICE_MATCHES and not link.exclude,
+            'links': [],
+        })
+        group['links'].append(link)
+    order = sorted(groups, key=lambda key: (key[0], key[1] not in DEVICE_MATCHES, forms._type_order(key[1])))
+    return [groups[key] for key in order]
 
 
 #: How many affected devices the event page lists.
@@ -174,14 +210,14 @@ class EventView(generic.ObjectView):
     queryset = EVENT_QUERYSET
 
     def get_extra_context(self, request, instance):
-        objects, total = linked_objects(instance, limit=100)
-        devices = affected_devices(instance).restrict(request.user, 'view')
+        targets = Targets(instance)
+        devices = affected_devices(instance, targets).restrict(request.user, 'view')
         devices_total = devices.count()
         now = timezone.now()
         upcoming = instance.occurrences(now, now + timedelta(days=3660))[:10] if instance.rrule else []
         return {
-            'objects': objects,
-            'objects_total': total,
+            'target_groups': target_groups(instance),
+            'targets_text': describe(instance, targets),
             'devices': devices.select_related('site', 'role', 'device_type').order_by('name')[:DEVICES_SHOWN],
             'devices_total': devices_total,
             'devices_more': max(devices_total - DEVICES_SHOWN, 0),
@@ -393,8 +429,8 @@ class EventICSView(ConditionalLoginRequiredMixin, View):
 
 
 def _describe(event):
-    objects, _total = linked_objects(event, limit=10)
-    return ', '.join(str(getattr(obj, 'object_repr', '') or obj) for obj in objects)
+    # What the event concerns, in words (the iCal LOCATION).
+    return describe(event)
 
 
 #

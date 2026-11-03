@@ -16,8 +16,9 @@ Outlook or any other calendar app.
   repeat on any iCal rule: every month on the 2nd Tuesday, every year on
   1 June, every other week on Monday and Thursday, and so on.
 - **Objects:** link an event to any NetBox objects (devices, sites, circuits,
-  VMs, other plugins' models), or give it a filter such as "all devices with
-  role *core* at site *dc-2*" that is evaluated when the event is shown.
+  VMs, other plugins' models). Kinds combine as a rule: "role *core* at site
+  *dc-2*, except rack *R4*" covers exactly those devices, including ones
+  added later.
 - **People:** each event has an owner and people in roles (Technical
   contact, Participant, Observer, or your own). Roles decide who may edit
   the event and who is notified. A whole user group, or a contact without a

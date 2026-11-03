@@ -48,7 +48,7 @@ class EventTable(NetBoxTable):
     event_owner = tables.Column()
     recurrence = tables.Column(accessor='rrule', verbose_name=_('Repeats'), orderable=False)
     objects = tables.TemplateColumn(
-        template_code='{% for link in record.links.all|slice:":3" %}{{ link.object_repr }}{% if not forloop.last %}, '
+        template_code='{% for link in record.links.all|slice:":3" %}{% if link.exclude %}not {% endif %}{{ link.object_repr }}{% if not forloop.last %}, '
                       '{% endif %}{% endfor %}{% if record.links.all|length > 3 %} …{% endif %}',
         verbose_name=_('Objects'), orderable=False,
     )

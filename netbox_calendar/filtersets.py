@@ -97,7 +97,8 @@ class EventFilterSet(NetBoxModelFilterSet):
         content_type = ContentType.objects.filter(app_label=app_label, model=model).first()
         if content_type is None:
             return queryset.none()
-        condition = Q(links__object_type=content_type)
+        # Excluded links don't count: the event is not about those objects.
+        condition = Q(links__object_type=content_type, links__exclude=False)
         if object_id:
             condition &= Q(links__object_id=object_id)
         return queryset.filter(condition).distinct()
@@ -106,4 +107,4 @@ class EventFilterSet(NetBoxModelFilterSet):
         # With object_type, filter_object() uses it.
         if self.data.get('object_type'):
             return queryset
-        return queryset.filter(links__object_id=value).distinct()
+        return queryset.filter(links__object_id=value, links__exclude=False).distinct()

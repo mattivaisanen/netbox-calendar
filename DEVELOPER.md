@@ -22,7 +22,7 @@ events repeat, how notices are sent or who may edit.
 | `models.py` | `EventType`, `EventRole`, `Event` (NetBox models), `EventObject` and `EventPerson` (change-logged parts of an event), plus plain `FeedToken`, `SentNotice` and `PluginSetting`. `all_day_bounds()`. |
 | `recurrence.py` | Everything about repeating: validating and normalizing an RRULE, the occurrences in a window, the form's simple choices (`build()` / `parse_simple()`), and the rule in words (`describe()`). |
 | `agenda.py` | Turns events (and change requests) into `Entry` rows for the month grid, timeline and widget. |
-| `lookup.py` | Linked objects, events by filter (`filter_query` run through the model's own filterset), the scope roll-up (`scopes()`: which events concern an object) and its reverse (`affected_devices()`: which devices an event concerns). |
+| `lookup.py` | The targeting rule. `Targets` sorts an event's links into criteria, picked and excluded objects; `concerns()` checks one object, `affected_devices()` builds the same rule as one device query, `events_for_object()` and `describe()` build on them. Also the scope roll-up (`scopes()`) and events by filter. |
 | `permissions.py` | The edit rule: owner, editing role, superuser or the `manage` action. `editable()` narrows a queryset, `can_edit()` checks one event. |
 | `signals.py` | Edit notices (scheduled, changed, cancelled), collected per transaction and sent on commit. |
 | `jobs.py` | The five-minute system job: automatic status, reminders, start and end notices, each sent once (`SentNotice`). |
@@ -128,6 +128,24 @@ renders any `owner` field in its own *Ownership* section.
 for its user, and the events are `restrict()`ed to what that user may
 view. The event list's filterset runs on the query string, so any list
 filter works on a feed. `ical_feeds` off makes every feed a 404.
+
+## The targeting rule
+
+Links of criteria types (`DEVICE_MATCHES`: site, location, role, ...)
+AND across types and OR within one; other included links (devices, VMs,
+circuits, ...) are added on top; excluded links (`EventObject.exclude`)
+are taken out of both. A device or VM filter is one more criterion.
+
+`concerns()` walks `scopes()` of one object; `affected_devices()` writes
+the same rule as a `Q` with `DEVICE_MATCHES`. Change both together:
+`tests/test_targets.py` checks they agree. `events_for_object()` picks
+candidates by link in SQL, then checks each with `concerns()`.
+
+The form's objects section (`TargetFieldsMixin`) has one field per kind
+and mode, named `include__<app>__<model>` or `exclude__<app>__<model>`.
+**Add objects...** is an `HTMXSelect` that re-renders the section; a
+picker exists when it has values, the event links that kind, or it was
+just chosen.
 
 ## Migrations
 

@@ -35,8 +35,7 @@ object's Events card, or **Schedule Event** above an object list.
 | Owner | Empty on a new event: you. Notified, and may always edit. |
 | Repeat | See [Repeating events](#repeating-events). |
 | Reminders | *Same as the event type*, *No reminders*, or *Pick for this event*: tick common times (15 minutes to 1 week before) and type any others in **Other times**, such as `3d, 45m`. |
-| Devices, Sites, Device roles, ... | What the event affects, one picker per kind of object. See [Objects](#objects). |
-| Other objects | Any other kind of object, such as interfaces or prefixes. |
+| Objects | What the event affects. **Add objects...** adds a picker for one kind, to match, include or exclude. See [Objects](#objects). |
 | Objects by filter | Rarely needed; see [Events by filter](#events-by-filter). |
 | Role, Users, Groups, Contacts | People to add with one role. More from the event page. |
 
@@ -79,27 +78,45 @@ the event changes every occurrence.
 Link any NetBox object: devices, interfaces, sites, racks, circuits,
 virtual machines, IP prefixes, and other plugins' models.
 
-- **On the event form:** one picker each for devices, virtual machines,
-  device roles, device types, platforms, sites, locations, regions, site
-  groups, racks, clusters, tenants and circuits. Editing the event shows
-  what is linked; removing an object from a picker unlinks it on save.
-  **Other objects** links any other kind.
-- **On the event page:** **Link Objects** adds objects of any kind.
-  **Unlink** removes one, after asking to confirm.
-- **From an object list:** tick the rows, then **Schedule Event** above the
-  table. The form opens with those objects linked.
-- **From an object page:** **Schedule** on its Events card.
+### How objects combine
 
-Linking a group of devices covers every device in it, including devices
-added later: a device role covers its devices (and those of its child
-roles), a site its devices, a region the devices of its sites, and so on.
-The event page lists all of them under **Affected Devices**.
+| Picked | Means |
+|---|---|
+| Different kinds (a device role and a location) | **AND**: devices of that role in that location. |
+| Several of one kind (two device roles) | **OR**: devices of either role. |
+| *Except* (a location, a role, a device) | **NOT**: those devices are left out. |
+| Devices, VMs and other objects picked one by one | Always in, unless excluded. |
+
+Example: device roles *Access* and *Core*, location *Floor 2*, except
+location *Floor 2 / Lab*, plus the device *edge-1*: every access or core
+device on floor 2 outside the lab, and edge-1 wherever it is.
+
+The kinds that match devices are sites, locations, regions, site groups,
+racks, clusters, device roles, device types, manufacturers, platforms and
+tenants. Each covers what is under it, including devices added later: a
+region covers the devices of its sites, a location those of its child
+locations. The event page lists the result under **Affected Devices**, and
+the **Objects** card shows the rule in words.
+
+### Adding objects
+
+- **On the event form:** **Add objects...** lists each kind under *Match*,
+  *Include one by one* or *Exclude*. Choosing one adds its picker; only the
+  kinds in use are shown. Editing the event shows what is linked; removing
+  an object from a picker unlinks it on save.
+- **On the event page:** **Link Objects** adds objects of any kind, with
+  **Exclude** to leave them out. The cross next to an object removes it,
+  after asking to confirm.
+- **From an object list:** tick the rows, then **Schedule Event** above the
+  table. The form opens with those objects included.
+- **From an object page:** **Schedule** on its Events card.
 
 ### On object pages
 
 Every linked object's page has an **Events** card with its running and
 upcoming events, and a banner while one runs. **All events linked here**
-opens the event list for the object.
+opens the event list for the object. A device or VM page shows the events
+whose rule takes it in, and not those that exclude it.
 
 With *Scope roll-up* on (the default), events higher up also show:
 
@@ -115,10 +132,10 @@ With *Scope roll-up* on (the default), events higher up also show:
 
 ### Events by filter
 
-Linking a role, type, platform or site already covers all its devices. For
-anything finer, an event can cover every object matching a filter, for
-example only the active devices of one platform. Pick the object type and
-write the filter as on that type's list URL:
+Picked kinds cover most needs. For anything finer, an event can use a
+filter, written as on that type's list URL. A device or VM filter is one
+more condition (AND) on top of the picked kinds; a filter of any other type
+adds the objects it matches. Pick the object type and write the filter:
 
 ```text
 platform=ios-xe&status=active

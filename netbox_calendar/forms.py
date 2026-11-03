@@ -9,15 +9,12 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext
 
-from circuits.models import Circuit
 from core.models import ObjectType
-from dcim.models import Device, DeviceRole, DeviceType, Location, Platform, Rack, Region, Site, SiteGroup
 from netbox.forms import (
     NetBoxModelBulkEditForm, NetBoxModelFilterSetForm, NetBoxModelForm, NetBoxModelImportForm,
 )
-from tenancy.models import Contact, Tenant
+from tenancy.models import Contact
 from users.models import Group
-from virtualization.models import Cluster, VirtualMachine
 from utilities.forms import add_blank_choice
 from utilities.forms.fields import (
     ColorField, CommentField, ContentTypeChoiceField, CSVChoiceField, CSVModelChoiceField, DynamicModelChoiceField,
@@ -29,6 +26,7 @@ from utilities.forms.widgets import DatePicker, DateTimePicker, HTMXSelect
 
 from . import plugin_settings, recurrence
 from .choices import EventStatusChoices, ImpactChoices, NoticeChoices
+from .lookup import DEVICE_MATCHES, EXCLUDABLE
 from .models import Event, EventObject, EventPerson, EventRole, EventType, display_name
 
 User = get_user_model()
@@ -201,29 +199,141 @@ def linkable_types():
     ).order_by('app_label', 'model')
 
 
-#: The objects the event form has a picker for: (field name, model, label).
-#: Links to any other type are made with "Other objects" or on the event page.
-LINK_FIELDS = (
-    ('link_devices', Device, _('Devices')),
-    ('link_virtual_machines', VirtualMachine, _('Virtual machines')),
-    ('link_device_roles', DeviceRole, _('Device roles')),
-    ('link_device_types', DeviceType, _('Device types')),
-    ('link_platforms', Platform, _('Platforms')),
-    ('link_sites', Site, _('Sites')),
-    ('link_locations', Location, _('Locations')),
-    ('link_regions', Region, _('Regions')),
-    ('link_site_groups', SiteGroup, _('Site groups')),
-    ('link_racks', Rack, _('Racks')),
-    ('link_clusters', Cluster, _('Clusters')),
-    ('link_tenants', Tenant, _('Tenants')),
-    ('link_circuits', Circuit, _('Circuits')),
+#: Included or excluded objects, in the event form's field names.
+INCLUDE, EXCLUDE = 'include', 'exclude'
+
+#: Kinds of object listed first when adding objects to an event, in this order.
+COMMON_TYPES = (
+    'dcim.device', 'virtualization.virtualmachine', 'dcim.devicerole', 'dcim.devicetype', 'dcim.manufacturer',
+    'dcim.platform', 'dcim.site', 'dcim.location', 'dcim.region', 'dcim.sitegroup', 'dcim.rack',
+    'virtualization.cluster', 'tenancy.tenant', 'circuits.circuit',
 )
 
 
-def link_field_for(content_type):
-    """The event form's picker field name for objects of `content_type`, or None."""
-    model = content_type.model_class()
-    return next((name for name, field_model, _label in LINK_FIELDS if field_model is model), None)
+def type_label(content_type):
+    """"dcim.site" for the content type of sites."""
+    return f'{content_type.app_label}.{content_type.model}'
+
+
+def target_field(label, exclude=False):
+    """The event form's field for included or excluded objects of `label` ("dcim.site" -> "include__dcim__site")."""
+    app_label, model = label.split('.')
+    return f'{EXCLUDE if exclude else INCLUDE}__{app_label}__{model}'
+
+
+def parse_target_field(name):
+    """(label, exclude) of a field name made by target_field(), or None for any other name."""
+    parts = name.split('__')
+    if len(parts) != 3 or parts[0] not in (INCLUDE, EXCLUDE):
+        return None
+    return f'{parts[1]}.{parts[2]}', parts[0] == EXCLUDE
+
+
+def _type_order(label):
+    return (COMMON_TYPES.index(label) if label in COMMON_TYPES else len(COMMON_TYPES), label)
+
+
+def _as_list(value):
+    if value in (None, ''):
+        return []
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+class TargetFieldsMixin:
+    """
+    The event form's objects: an "Add objects" menu and one picker per kind
+    of object in use, included or excluded. Choosing from the menu re-renders
+    the section (HTMX) with a picker for that kind. Opening the form shows
+    the kinds the event links now; a picker left empty is dropped on the next
+    re-render. See lookup.py for how the pickers combine.
+    """
+    def setup_target_fields(self):
+        types = {type_label(content_type): content_type for content_type in linkable_types()}
+        ordered = sorted(types, key=_type_order)
+
+        def option(label, exclude=False):
+            return target_field(label, exclude), types[label].name.capitalize()
+
+        self.fields['add_target'].choices = [
+            ('', _('Add objects...')),
+            (_('Match (all kinds must match, any one of each kind)'),
+             [option(label) for label in ordered if label in DEVICE_MATCHES]),
+            (_('Include one by one'), [option(label) for label in ordered if label not in DEVICE_MATCHES]),
+            (_('Exclude'), [option(label, True) for label in ordered if label in EXCLUDABLE]),
+        ]
+
+        # What each picker shows: the values sent with the form (or in the
+        # address), and the event's links when the form is first opened.
+        source = self.data if self.is_bound else self.initial
+        values = {}
+        if self.instance.pk and not self.is_bound and 'add_target' not in source:
+            for link in self.instance.links.select_related('object_type'):
+                values.setdefault(target_field(type_label(link.object_type), link.exclude), []).append(link.object_id)
+        for key in source:
+            if parse_target_field(key):
+                values[key] = source.getlist(key) if hasattr(source, 'getlist') else _as_list(source[key])
+        picked = source.get('add_target')
+        if picked and parse_target_field(picked):
+            values.setdefault(picked, [])
+        if not self.is_bound:
+            # The menu goes back to "Add objects..." once its picker is shown.
+            self.initial['add_target'] = ''
+
+        self.target_names = []
+        for name in sorted(values, key=lambda n: (parse_target_field(n)[1], _type_order(parse_target_field(n)[0]))):
+            label, exclude = parse_target_field(name)
+            if label not in types or (exclude and label not in EXCLUDABLE):
+                continue
+            model = types[label].model_class()
+            plural = model._meta.verbose_name_plural
+            self.fields[name] = DynamicModelMultipleChoiceField(
+                queryset=model.objects.all(), required=False, selector=True,
+                label=_('Except {types}').format(types=plural) if exclude else plural.capitalize(),
+            )
+            if not self.is_bound:
+                self.initial[name] = values[name]
+            self.target_names.append(name)
+
+    def clean_targets(self):
+        """An object can't be both included and excluded."""
+        for name in self.target_names:
+            label, exclude = parse_target_field(name)
+            if exclude:
+                both = set(self.cleaned_data.get(name) or ()) & set(self.cleaned_data.get(target_field(label)) or ())
+                if both:
+                    self.add_error(name, _('Included and excluded at once: {objects}.').format(
+                        objects=', '.join(str(obj) for obj in both),
+                    ))
+
+    def save_targets(self, event):
+        """
+        Make the event's links match the pickers: link what was added, unlink
+        what was taken out, switch what moved between included and excluded.
+        Links to objects deleted since are kept (the event page shows them).
+        """
+        if 'add_target' not in self.data and not self.target_names:
+            # Sent without the objects section (by a script, say): leave the links be.
+            return
+        wanted = {}
+        for name in self.target_names:
+            _label, exclude = parse_target_field(name)
+            for obj in self.cleaned_data.get(name) or ():
+                wanted[(ContentType.objects.get_for_model(obj).pk, obj.pk)] = (obj, exclude)
+        for link in event.links.select_related('object_type'):
+            key = (link.object_type_id, link.object_id)
+            if key in wanted:
+                _obj, exclude = wanted.pop(key)
+                if link.exclude != exclude:
+                    link.snapshot()
+                    link.exclude = exclude
+                    link.save()
+            elif link.object is not None:
+                link.snapshot()
+                link.delete()
+        for (type_id, object_id), (obj, exclude) in wanted.items():
+            EventObject.objects.create(
+                event=event, object_type_id=type_id, object_id=object_id, object_repr=str(obj)[:200], exclude=exclude,
+            )
 
 
 class LinkFieldsMixin:
@@ -248,12 +358,18 @@ class LinkFieldsMixin:
         field.widget.attrs['selector'] = model._meta.label_lower
 
     def save_links(self, event):
-        """Link the picked objects to `event` (already saved). Adds only."""
+        """Link the picked objects to `event` (already saved), included or excluded. Adds only."""
         content_type = self.cleaned_data.get('link_type')
+        exclude = bool(self.cleaned_data.get('exclude'))
         for obj in self.cleaned_data.get('link_objects') or ():
-            EventObject.objects.get_or_create(
-                event=event, object_type=content_type, object_id=obj.pk, defaults={'object_repr': str(obj)[:200]},
+            link, created = EventObject.objects.get_or_create(
+                event=event, object_type=content_type, object_id=obj.pk,
+                defaults={'object_repr': str(obj)[:200], 'exclude': exclude},
             )
+            if not created and link.exclude != exclude:
+                link.snapshot()
+                link.exclude = exclude
+                link.save()
 
 
 #
@@ -369,13 +485,12 @@ class EventRoleImportForm(NetBoxModelImportForm):
 # Events
 #
 
-class EventForm(ReminderFieldsMixin, LinkFieldsMixin, NetBoxModelForm):
+class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
     """
-    Add or edit an event. Besides the event's own fields it has one picker
-    per common object type (LINK_FIELDS), filled with what is linked now:
-    saving links what was added and unlinks what was taken out. "Other
-    objects" adds links of any other type, and people are added with one
-    role. Repeat fields build the iCal rule (recurrence.build()).
+    Add or edit an event. Besides the event's own fields it has the objects
+    section (TargetFieldsMixin): saving links what was added and unlinks
+    what was taken out. People are added with one role. Repeat fields build
+    the iCal rule (recurrence.build()).
     """
     event_type = DynamicModelChoiceField(queryset=EventType.objects.all(), label=_('Type'))
     event_owner = UserChoiceField(
@@ -411,22 +526,21 @@ class EventForm(ReminderFieldsMixin, LinkFieldsMixin, NetBoxModelForm):
     reminder_presets = reminder_preset_field()
     reminder_other = reminder_other_field()
 
-    # One picker per entry of LINK_FIELDS is added in __init__().
-    link_type = ContentTypeChoiceField(
-        queryset=ContentType.objects.none(), required=False, label=_('Other object type'),
-        widget=HTMXSelect(hx_target_id='other_link_fields'),
-        help_text=_('To link something not listed above, such as interfaces or prefixes. Links of other types '
-                    'are listed, and unlinked, on the event page.'),
+    # One picker per kind of object in use is added in __init__().
+    add_target = forms.ChoiceField(
+        required=False, label=_('Objects'), widget=HTMXSelect(hx_target_id='target_fields'),
+        help_text=_('Different kinds must all match: a device role and a location mean the devices of that role in '
+                    'that location. Several of one kind: any of them. Objects included one by one always count, '
+                    'and excluded ones never do.'),
     )
-    link_objects = DynamicModelMultipleChoiceField(queryset=ContentType.objects.none(), required=False)
     filter_object_type = ContentTypeChoiceField(
         queryset=ContentType.objects.none(), required=False, label=_('Object type'),
     )
     filter_query = forms.CharField(
         required=False, max_length=1000, label=_('Filter'),
-        help_text=_('Rarely needed: linking a device role, type, platform or site above already covers all its '
-                    'devices. For anything finer, a filter as in an object list\'s address after "?", such as '
-                    'role=core&status=active. Objects added later match too.'),
+        help_text=_('Rarely needed. A filter as in an object list\'s address after "?", such as '
+                    'status=active&tag=core. A device or VM filter must match too, like another kind above. '
+                    'Objects added later match too.'),
     )
 
     people_role = DynamicModelChoiceField(queryset=EventRole.objects.all(), required=False, label=_('Role'))
@@ -446,8 +560,8 @@ class EventForm(ReminderFieldsMixin, LinkFieldsMixin, NetBoxModelForm):
         FieldSet('start', 'end', 'all_day', name=_('When')),
         FieldSet('repeat', 'repeat_interval', 'repeat_weekdays', 'repeat_until', 'repeat_count', 'rrule',
                  name=_('Repeat'), html_id='repeat_fields'),
-        FieldSet(*(name for name, _model, _label in LINK_FIELDS), name=_('Objects')),
-        FieldSet('link_type', 'link_objects', name=_('Other objects'), html_id='other_link_fields'),
+        # The pickers in use are added to this section in __init__().
+        FieldSet('add_target', name=_('Objects'), html_id='target_fields'),
         FieldSet('filter_object_type', 'filter_query', name=_('Objects by filter')),
         FieldSet('people_role', 'people_users', 'people_groups', 'people_contacts', name=_('Add people')),
         FieldSet('reminder_source', 'reminder_presets', 'reminder_other', name=_('Notifications'),
@@ -463,14 +577,14 @@ class EventForm(ReminderFieldsMixin, LinkFieldsMixin, NetBoxModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Types with their own picker are left out of "Other objects".
-        self.fields['link_type'].queryset = linkable_types().exclude(
-            pk__in=[ContentType.objects.get_for_model(model).pk for _name, model, _label in LINK_FIELDS],
-        )
         self.fields['filter_object_type'].queryset = linkable_types()
         instance = self.instance
-        self.add_link_pickers()
-        self.setup_link_fields()
+        self.setup_target_fields()
+        self.fieldsets = tuple(
+            FieldSet('add_target', *self.target_names, name=_('Objects'), html_id='target_fields')
+            if getattr(fieldset, 'html_id', None) == 'target_fields' else fieldset
+            for fieldset in self.fieldsets
+        )
 
         if instance.pk and not self.is_bound:
             # Show the repeat fields for the stored rule, unless the form is re-rendered with new values.
@@ -521,20 +635,6 @@ class EventForm(ReminderFieldsMixin, LinkFieldsMixin, NetBoxModelForm):
         if editor is not None and not editor.has_perm('users.view_group'):
             self.fields.pop('people_groups', None)
 
-    def add_link_pickers(self):
-        """One picker per entry of LINK_FIELDS, showing what the event links now, so editing keeps it."""
-        linked = {}
-        if self.instance.pk:
-            for type_id, object_id in self.instance.links.values_list('object_type_id', 'object_id'):
-                linked.setdefault(type_id, []).append(object_id)
-        for name, model, label in LINK_FIELDS:
-            self.fields[name] = DynamicModelMultipleChoiceField(
-                queryset=model.objects.all(), required=False, label=label, selector=True,
-            )
-            # Already set when the form is re-rendered, or opened with objects picked.
-            if name not in self.initial:
-                self.initial[name] = linked.get(ContentType.objects.get_for_model(model).pk, [])
-
     def clean(self):
         super().clean()
         data = self.cleaned_data
@@ -578,40 +678,15 @@ class EventForm(ReminderFieldsMixin, LinkFieldsMixin, NetBoxModelForm):
         else:
             self.instance.reminders = None if source == REMINDERS_FROM_TYPE else []
 
-        if data.get('link_type') and not data.get('link_objects') and 'link_objects' in self.fields:
-            self.add_error('link_objects', _('Pick the objects to link, or clear the type.'))
+        self.clean_targets()
         if any(data.get(name) for name in ('people_users', 'people_groups', 'people_contacts')) \
                 and not data.get('people_role'):
             self.add_error('people_role', _('Pick the role of the people added.'))
         return data
 
-    def save_picked_links(self, event):
-        """
-        Make the event's links of each picker's type match the picker: link
-        what was added, unlink what was taken out. Links to objects deleted
-        since are kept (the event page shows them struck through).
-        """
-        for name, model, _label in LINK_FIELDS:
-            if name not in self.cleaned_data:
-                continue
-            content_type = ContentType.objects.get_for_model(model)
-            picked = {obj.pk: obj for obj in self.cleaned_data[name] or ()}
-            current = {link.object_id: link for link in event.links.filter(object_type=content_type)}
-            existing = set(model.objects.filter(pk__in=current).values_list('pk', flat=True))
-            for object_id, link in current.items():
-                if object_id not in picked and object_id in existing:
-                    link.snapshot()
-                    link.delete()
-            for object_id, obj in picked.items():
-                if object_id not in current:
-                    EventObject.objects.create(
-                        event=event, object_type=content_type, object_id=object_id, object_repr=str(obj)[:200],
-                    )
-
     def save(self, *args, **kwargs):
         event = super().save(*args, **kwargs)
-        self.save_picked_links(event)
-        self.save_links(event)
+        self.save_targets(event)
         role = self.cleaned_data.get('people_role')
         if role is not None:
             for user in self.cleaned_data.get('people_users') or ():
@@ -690,11 +765,23 @@ class LinkObjectsForm(LinkFieldsMixin, forms.Form):
         queryset=ContentType.objects.none(), label=_('Object type'), widget=HTMXSelect(),
     )
     link_objects = DynamicModelMultipleChoiceField(queryset=ContentType.objects.none(), label=_('Objects'))
+    exclude = forms.BooleanField(
+        required=False, label=_('Exclude'),
+        help_text=_('Leave these out of the event, with the devices and VMs they cover. For devices, VMs and '
+                    'what groups them (sites, roles, ...).'),
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['link_type'].queryset = linkable_types()
         self.setup_link_fields()
+
+    def clean(self):
+        super().clean()
+        content_type = self.cleaned_data.get('link_type')
+        if self.cleaned_data.get('exclude') and content_type and type_label(content_type) not in EXCLUDABLE:
+            self.add_error('exclude', _('Objects of this kind cannot be excluded.'))
+        return self.cleaned_data
 
 
 class EventPersonForm(forms.ModelForm):

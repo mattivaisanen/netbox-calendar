@@ -310,16 +310,21 @@ def all_day_bounds(start, end):
 
 
 class EventObject(ChangeLoggedModel):
-    """An event's link to any NetBox object (a device, site, circuit, ...)."""
+    """
+    An event's link to any NetBox object (a device, site, circuit, ...).
+    How links combine into the devices an event concerns is in lookup.py.
+    """
     event = models.ForeignKey(to=Event, on_delete=models.CASCADE, related_name='links')
     object_type = models.ForeignKey(to='contenttypes.ContentType', on_delete=models.CASCADE, related_name='+')
     object_id = models.PositiveBigIntegerField()
     object = GenericForeignKey(ct_field='object_type', fk_field='object_id')
     # Kept so a link to an object deleted since still says what it was.
     object_repr = models.CharField(max_length=200, blank=True)
+    # Leaves the object, and the devices and VMs it covers, out of the event.
+    exclude = models.BooleanField(verbose_name=_('exclude'), default=False)
 
     class Meta:
-        ordering = ('event', 'object_type', 'object_repr')
+        ordering = ('event', 'exclude', 'object_type', 'object_repr')
         verbose_name = _('event object')
         verbose_name_plural = _('event objects')
         constraints = (
@@ -328,7 +333,15 @@ class EventObject(ChangeLoggedModel):
         indexes = (models.Index(fields=('object_type', 'object_id')),)
 
     def __str__(self):
-        return f'{self.event}: {self.object_repr or self.object_id}'
+        name = self.object_repr or self.object_id
+        return f'{self.event}: not {name}' if self.exclude else f'{self.event}: {name}'
+
+    def clean(self):
+        super().clean()
+        from .lookup import EXCLUDABLE  # Not at the top: lookup imports this module.
+        if self.exclude and self.object_type_id and \
+                f'{self.object_type.app_label}.{self.object_type.model}' not in EXCLUDABLE:
+            raise ValidationError({'exclude': _('Only devices, VMs and what groups them can be excluded.')})
 
     def get_absolute_url(self):
         return self.event.get_absolute_url()

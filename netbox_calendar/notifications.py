@@ -8,8 +8,9 @@ scheduled, changed or cancelled (signals.py, after the database commit),
 and reminders, starts and ends (jobs.py, the background job).
 
 Who hears is also set per event type: the owner, people on the event whose
-role is notified, a NetBox group, users subscribed to a linked object, and
-contacts assigned to a linked object (e-mail only). Whoever made a change
+role is notified, a NetBox group, users subscribed to an object the event
+concerns, and contacts assigned to one (e-mail only). Those objects are the
+included links and the affected devices; excluded ones are left out. Whoever made a change
 is not told about their own change.
 """
 import logging
@@ -30,7 +31,7 @@ from tenancy.models import ContactAssignment
 
 from . import ical, message_template
 from .choices import NoticeChoices
-from .lookup import linked_objects
+from .lookup import Targets, affected_devices, describe, linked_objects
 from .models import EventObject, display_name
 from .plugin_settings import get_setting, on
 
@@ -71,10 +72,33 @@ def person(user):
     }
 
 
+#: At most this many affected devices are listed in a notice, or looked up for subscribers and contacts.
+DEVICES_LISTED = 50
+DEVICES_LOOKED_UP = 500
+
+
 def _linked_objects(event):
-    # A link to a deleted object comes back as its EventObject: left out.
+    # Included links; a link to a deleted object comes back as its EventObject: left out.
     objects, _total = linked_objects(event, limit=50)
     return [obj for obj in objects if not isinstance(obj, EventObject)]
+
+
+def _concerned_objects(event):
+    """The included objects and the affected devices, for subscribers and contacts."""
+    objects = _linked_objects(event)
+    seen = {(type(obj), obj.pk) for obj in objects}
+    for device in affected_devices(event)[:DEVICES_LOOKED_UP]:
+        if (type(device), device.pk) not in seen:
+            objects.append(device)
+    return objects
+
+
+def _object(obj):
+    """An object as webhook data."""
+    return {
+        'type': obj._meta.label_lower, 'id': obj.pk, 'name': str(obj),
+        'link': ical.absolute_url(obj.get_absolute_url()) if hasattr(obj, 'get_absolute_url') else '',
+    }
 
 
 def recipients(event, actor=None):
@@ -99,7 +123,7 @@ def recipients(event, actor=None):
     if event_type.notify_group_id:
         users += list(event_type.notify_group.users.all())
     if event_type.notify_subscribers or event_type.notify_contacts:
-        objects = _linked_objects(event)
+        objects = _concerned_objects(event)
         keys = [(ContentType.objects.get_for_model(obj), obj.pk) for obj in objects]
         if event_type.notify_subscribers:
             for content_type, pk in keys:
@@ -148,8 +172,10 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
     Everything a message about the notice needs, for Event Rules
     (conditions) and webhook body templates ({{ data.<key> }}).
     """
+    targets = Targets(event)
     objects = _linked_objects(event)
-    objects_text = ', '.join(str(obj) for obj in objects)
+    objects_text = describe(event, targets)
+    devices = list(affected_devices(event, targets).order_by('name')[:DEVICES_LISTED])
     link = ical.absolute_url(event.get_absolute_url())
     notice = str(EVENT_TYPES[kind][1])
     context = {
@@ -185,13 +211,11 @@ def event_data(event, kind, users, contacts, start, end, actor=None, offset=None
         'reminder_minutes': offset,
         'link': link,
         'url': event.get_absolute_url(),
-        'objects': [
-            {
-                'type': obj._meta.label_lower, 'id': obj.pk, 'name': str(obj),
-                'link': ical.absolute_url(obj.get_absolute_url()) if hasattr(obj, 'get_absolute_url') else '',
-            }
-            for obj in objects
-        ],
+        # What the event concerns: in words, the included objects, the excluded ones and the affected devices.
+        'objects_text': objects_text,
+        'objects': [_object(obj) for obj in objects],
+        'excluded': [_object(obj) for obj in targets.excluded],
+        'devices': [_object(device) for device in devices],
         'owner': person(event.event_owner),
         'people': [
             {'role': row.role.name, 'name': row.person_name, 'email': row.email}
@@ -269,7 +293,7 @@ def send_email(event, data, users, contacts):
         organizer = (display_name(event.event_owner), event.event_owner.email)
     invite = ical.calendar(
         [event], name=event.title, method=method, attendees=addresses, organizer=organizer,
-        describe=lambda _event: ', '.join(obj['name'] for obj in data['objects']),
+        describe=lambda _event: data['objects_text'],
     )
     subject = f'{data["event"]}: {event.title} ({data["when"]})'
     message = EmailMultiAlternatives(
