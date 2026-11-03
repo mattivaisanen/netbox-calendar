@@ -20,7 +20,8 @@ from django.utils.translation import gettext_lazy as _
 from netbox.context import current_request
 from netbox.plugins.utils import get_plugin_config
 
-from .message_template import DEFAULT, clean
+from . import message_template
+from .message_template import clean
 from .models import PluginSetting
 
 APP = 'netbox_calendar'
@@ -41,6 +42,8 @@ class Setting:
     help_text: str
     kind: str
     choices: tuple = field(default=())
+    #: For a template: the text used when it is left empty.
+    default: str = message_template.DEFAULT
 
     def normalize(self, value):
         """The value as the plugin uses it, so equal meanings compare equal."""
@@ -51,7 +54,7 @@ class Setting:
             value = str(value) if value is not None else None
             return value if value in keys else keys[0]
         if self.kind == KIND_TEMPLATE:
-            return clean(value).strip() or DEFAULT
+            return clean(value).strip() or self.default
         return (value or '').strip()
 
 
@@ -59,6 +62,10 @@ WEEKDAY_CHOICES = (
     ('0', _('Monday')), ('1', _('Tuesday')), ('2', _('Wednesday')), ('3', _('Thursday')),
     ('4', _('Friday')), ('5', _('Saturday')), ('6', _('Sunday')),
 )
+
+#: The variables every message template can use (message_template.py).
+VARIABLES = ('notice, title, event_type, status, impact, start, end, when, objects, owner, by, link, comment, '
+             'occurrence, reason')
 
 SETTINGS = (
     Setting(
@@ -69,7 +76,7 @@ SETTINGS = (
     Setting(
         'direct_email', _('Direct e-mail'),
         _("E-mail the people notified through NetBox's EMAIL settings, with a calendar invite attached, "
-          'for event types that have "Send e-mail" on.'),
+          'Each event type must also have "Send e-mail" on (Calendar -> Event types).'),
         KIND_BOOL,
     ),
     Setting(
@@ -122,10 +129,21 @@ SETTINGS = (
     ),
     Setting(
         'message', _('Notification message'),
-        _('The text webhooks get as {{ data.message }} and the body of direct e-mail, in Jinja2. Variables: '
-          'notice, title, event_type, status, impact, start, end, when, objects, owner, by, link, comment. '
+        _('The text webhooks get as {{ data.message }}, in Jinja2. Variables: ' + VARIABLES + '. '
           'Empty: the default text.'),
         KIND_TEMPLATE,
+    ),
+    Setting(
+        'email_subject', _('E-mail subject'),
+        _('The subject of direct e-mail, in Jinja2, on one line. Same variables as the notification message. '
+          'Empty: the default subject.'),
+        KIND_TEMPLATE, default=message_template.EMAIL_SUBJECT,
+    ),
+    Setting(
+        'email_body', _('E-mail body'),
+        _('The plain text body of direct e-mail, in Jinja2. Same variables as the notification message. '
+          'Empty: the default text.'),
+        KIND_TEMPLATE, default=message_template.EMAIL_BODY,
     ),
 )
 
