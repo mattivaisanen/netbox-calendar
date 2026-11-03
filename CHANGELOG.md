@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: the Event Rules list failed to load (TypeError) when a rule
+  used a calendar notice as a trigger.
 - The calendar's notices (Event scheduled, Event reminder, ...) are now
   listed as Event Rule triggers. They were registered too late for
   NetBox's form to see them.

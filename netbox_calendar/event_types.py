@@ -26,10 +26,22 @@ EVENT_TYPES = {
 
 
 class TranslatedEventType(EventType):
-    # NetBox prints an event with str(event); a lazy translation must be
-    # made plain text first, or the notification menu fails to load.
+    """
+    An event type whose text is translated when read. NetBox uses `text`
+    as plain text (joined into the Event Rules list, printed in the
+    notification menu), so a lazy translation is made a string on read.
+    """
+
+    @property
+    def text(self):
+        return str(self._text)
+
+    @text.setter
+    def text(self, value):
+        self._text = value
+
     def __str__(self):
-        return str(self.text)
+        return self.text
 
 
 def register():

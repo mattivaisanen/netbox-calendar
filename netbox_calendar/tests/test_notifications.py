@@ -103,6 +103,18 @@ class EditNoticeTests(TestCase):
         self.assertIn('netbox_calendar.scheduled', choices)
         self.assertIn('netbox_calendar.reminder', choices)
 
+    def test_event_rule_list_shows_notice_names(self):
+        """The Event Rules list joins trigger names as plain text."""
+        from extras.tables import EventRuleTable
+
+        webhook = Webhook.objects.create(name='Chat', payload_url='https://chat.invalid/hook')
+        rule = EventRule.objects.create(
+            name='Calendar to chat', event_types=['netbox_calendar.scheduled', 'object_created'],
+            action_type='webhook', action_object=webhook,
+        )
+        table = EventRuleTable(EventRule.objects.filter(pk=rule.pk))
+        self.assertIn('Event scheduled', str(table.rows[0].get_cell('event_types')))
+
     def test_event_rule_webhook_body(self):
         """A notice runs Event Rules, and a body template written for
         netbox-change-approval's data renders with it."""
