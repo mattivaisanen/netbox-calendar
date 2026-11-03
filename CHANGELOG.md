@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Event form: after the start, give the end as a **Length** (such as
+  `1h 30m`) or an **End date**, picked with the **End by** buttons. Repeat
+  is part of the same **When** section and follows the start: weekly must
+  include the start's weekday, and the repeat **Ends**: **No end** (the
+  default), **Until a day** (not before the start) or after a **Number of
+  times**.
+- Fixed: date pickers started the week on Sunday whatever the **First day
+  of the week** setting. They now follow it, and shade weekends.
+- **All day** sits under the start. Ticking it switches the start to a
+  date and hides End by; an optional **Last day** makes it run over several
+  days.
+- Beside **Length**, a read-only box shows the end it gives, such as
+  *ends Tue 10.11.2026 12:00*.
+- A repeating event lists its **Next** three times under the repeat fields,
+  in NetBox's date format, updated as the form is filled in.
 - People are added on the event page only. The event form's *Add people*
   section is gone; **Add People** on the People card adds users, groups
   and contacts in one role, and **Add and pick another role** goes on to

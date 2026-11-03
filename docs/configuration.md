@@ -16,7 +16,7 @@ setting except `reminder_grace_minutes` on **Calendar → Settings**; see
 | `scope_rollup` | `True` | Events on a site, region, location, rack, cluster, device role, device type, platform or tenant also concern its devices and VMs. |
 | `change_requests` | `True` | Show netbox-change-approval's scheduled change requests on the month view and timeline, when that plugin is installed. |
 | `auto_status` | `True` | Single events move to *In progress* at their start and *Done* at their end. |
-| `first_weekday` | `0` | First column of the month view: `0` Monday ... `6` Sunday. |
+| `first_weekday` | `0` | First column of the month view and first day in date pickers: `0` Monday ... `6` Sunday. |
 | `netbox_url` | `''` | NetBox's address as users reach it, such as `https://netbox.corp.internal`. Gives full links in notices, e-mails and the iCal feed. Empty: links are paths only, and feed addresses use the address of the browser that opened the feed page. |
 | `message` | see [notifications.md](notifications.md#the-message) | Jinja2 template of the notice text: `{{ data.message }}` for webhooks. |
 | `email_subject` | see [notifications.md](notifications.md#e-mail-subject-and-body) | Jinja2 template of the direct e-mail subject. |
