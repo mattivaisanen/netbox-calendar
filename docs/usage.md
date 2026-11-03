@@ -106,7 +106,7 @@ location *Floor 2 / Lab*, plus the device *edge-1*: every access or core
 device on floor 2 outside the lab, and edge-1 wherever it is.
 
 The kinds that match devices are sites, locations, regions, site groups,
-racks, clusters, device roles, device types, manufacturers, platforms and
+racks, clusters, device roles, device types, manufacturers, platforms, tags and
 tenants. Each covers what is under it, including devices added later: a
 region covers the devices of its sites, a location those of its child
 locations. The event page lists the result under **Affected Devices**, and
@@ -117,7 +117,7 @@ the **Objects** card shows the rule in words.
 - **On the event form:** **Add** adds a row. Pick *Include* or *Exclude*,
   then a type, then the objects; the bin button removes the row. The type
   menu lists kinds that pick devices and VMs (*Devices and VMs by* site,
-  role, ...) apart from *Specific objects* (a device, a circuit, ...).
+  role, tag, ...) apart from *Specific objects* (a device, a circuit, ...).
   **Result** says in words what the rows cover and counts the devices;
   **Show devices** lists them. Editing the event shows a row per kind
   linked; removing an object unlinks it on save.

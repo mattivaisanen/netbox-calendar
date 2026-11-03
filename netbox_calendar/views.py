@@ -10,6 +10,8 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.utils.text import capfirst
 from django.utils.translation import gettext as _
 from django.views.generic import View
@@ -332,14 +334,17 @@ class EventChangeMixin(ConditionalLoginRequiredMixin):
 
 
 def _names(objects):
-    """ "a", "a or b", "a, b or c"."""
-    names = [str(obj) for obj in objects]
-    return names[0] if len(names) == 1 else _('{names} or {last}').format(names=', '.join(names[:-1]), last=names[-1])
+    """ "<b>a</b>", "<b>a</b> or <b>b</b>", "<b>a</b>, <b>b</b> or <b>c</b>" (HTML)."""
+    names = [format_html('<strong>{}</strong>', obj) for obj in objects]
+    if len(names) == 1:
+        return names[0]
+    return format_html(_('{names} or {last}'), names=mark_safe(', '.join(names[:-1])), last=names[-1])
 
 
-def _phrase(objects):
-    """ "site Tampere 1 or Tampere 2" for objects of one type."""
-    return f'{objects[0]._meta.verbose_name} {_names(objects)}'
+def _phrase(objects, first=False):
+    """ "site <b>Tampere 1</b> or <b>Tampere 2</b>" for objects of one type (HTML)."""
+    name = objects[0]._meta.verbose_name
+    return format_html('{} {}', capfirst(name) if first else name, _names(objects))
 
 
 def _by_type(objects):
@@ -379,7 +384,7 @@ class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
     what the event covers and how many devices that is.
     """
     template_name = 'netbox_calendar/inc/target_summary.html'
-    LIMIT = 10
+    LIMIT = 30
 
     def get(self, request):
         if not request.user.has_perm('netbox_calendar.view_event'):
@@ -403,24 +408,26 @@ class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
             event.filter_query = request.GET.get('filter_query', '')
         targets = Targets(event, objects)
 
-        # The rule as lines: what is in, then what is left out.
+        # The rule as lines (HTML): what is in, then what is left out.
         included = []
         criteria = [_phrase(objs) for objs in targets.criteria.values()]
         if targets.filter_is_criterion:
-            criteria.append(_('matching the filter {filter}').format(filter=event.filter_query))
+            criteria.append(format_html(_('matching the filter <code>{}</code>'), event.filter_query))
         if criteria:
-            included.append(_('Devices and VMs with {criteria}').format(criteria=_(' and ').join(criteria)))
-        included += [capfirst(_phrase(objs)) for objs in _by_type(targets.picked)]
+            joined = mark_safe(format_html(' <strong>{}</strong> ', _('and')).join(criteria))
+            included.append(format_html(_('Devices and VMs with {}'), joined))
+        included += [_phrase(objs, first=True) for objs in _by_type(targets.picked)]
         if event.filter_object_type_id and not targets.filter_is_criterion and targets.filter_model:
-            included.append(_('{types} matching the filter {filter}').format(
-                types=targets.filter_model._meta.verbose_name_plural.capitalize(), filter=event.filter_query,
+            included.append(format_html(
+                _('{} matching the filter <code>{}</code>'),
+                targets.filter_model._meta.verbose_name_plural.capitalize(), event.filter_query,
             ))
         excluded = []
         for objs in _by_type(targets.excluded):
             if objs[0]._meta.label_lower in DEVICE_MATCHES:
-                excluded.append(_('Devices and VMs with {criterion}').format(criterion=_phrase(objs)))
+                excluded.append(format_html(_('Devices and VMs with {}'), _phrase(objs)))
             else:
-                excluded.append(capfirst(_phrase(objs)))
+                excluded.append(_phrase(objs, first=True))
 
         devices = affected_devices(event, targets).restrict(request.user, 'view').order_by('name')
         device_count = devices.count()

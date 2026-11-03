@@ -1,34 +1,50 @@
 {% load helpers %}
 {% load i18n %}
 {# What the event form's objects cover, in plain words (EventTargetsPreviewView). #}
-<div class="border rounded p-3">
-  {% if not included %}
-    <span class="text-secondary">{% trans "Nothing yet. Add a row above." %}</span>
-  {% else %}
-    {% for line in included %}
-      <div><i class="mdi mdi-check text-success"></i> {{ line }}</div>
-    {% endfor %}
-    {% for line in excluded %}
-      <div><i class="mdi mdi-close text-danger"></i> {% trans "Not:" %} {{ line }}</div>
-    {% endfor %}
-    <div class="mt-2">
-      <span class="badge text-bg-primary">
-        {% blocktrans count counter=device_count %}{{ counter }} device{% plural %}{{ counter }} devices{% endblocktrans %}
-      </span>
-      {% if other_count %}
-        <span class="badge text-bg-secondary">
-          {% blocktrans count counter=other_count %}{{ counter }} other object{% plural %}{{ counter }} other objects{% endblocktrans %}
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h3 class="card-title mb-0">{% trans "Result" %}</h3>
+    {% if included %}
+      <div>
+        <span class="badge text-bg-primary">
+          {% blocktrans count counter=device_count %}{{ counter }} device{% plural %}{{ counter }} devices{% endblocktrans %}
         </span>
-      {% endif %}
-    </div>
+        {% if other_count %}
+          <span class="badge text-bg-secondary">
+            {% blocktrans count counter=other_count %}{{ counter }} other object{% plural %}{{ counter }} other objects{% endblocktrans %}
+          </span>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+  {% if not included %}
+    <div class="card-body text-secondary">{% trans "Nothing yet. Add a row above." %}</div>
+  {% else %}
+    <ul class="list-group list-group-flush">
+      {% for line in included %}
+        <li class="list-group-item d-flex align-items-center gap-3">
+          <span class="badge text-bg-success calendar-result-badge">{% trans "Include" %}</span><span>{{ line }}</span>
+        </li>
+      {% endfor %}
+      {% for line in excluded %}
+        <li class="list-group-item d-flex align-items-center gap-3">
+          <span class="badge text-bg-danger calendar-result-badge">{% trans "Exclude" %}</span><span>{{ line }}</span>
+        </li>
+      {% endfor %}
+    </ul>
     {% if devices %}
-      <details class="mt-2">
-        <summary>{% trans "Show devices" %}</summary>
-        <ul class="mb-0 mt-1">
-          {% for device in devices %}<li>{{ device|linkify }}</li>{% endfor %}
-          {% if more_devices %}<li class="text-secondary">{% blocktrans %}and {{ more_devices }} more{% endblocktrans %}</li>{% endif %}
-        </ul>
-      </details>
+      <div class="card-body border-top">
+        <div class="text-secondary small fw-bold mb-2">{% trans "Devices" %}</div>
+        <div class="d-flex flex-wrap gap-1">
+          {% for device in devices %}
+            <a href="{{ device.get_absolute_url }}" class="badge border text-reset fw-normal" target="_blank">{{ device }}</a>
+          {% endfor %}
+          {% if more_devices %}
+            <span class="badge text-secondary fw-normal">{% blocktrans %}and {{ more_devices }} more{% endblocktrans %}</span>
+          {% endif %}
+        </div>
+      </div>
     {% endif %}
   {% endif %}
 </div>
+<style>.calendar-result-badge { min-width: 4.5rem; }</style>

@@ -120,4 +120,4 @@ class TargetFormTests(TestCase):
         })
         self.assertEqual(response.context['device_count'], 1)
         self.assertEqual(list(response.context['devices']), [self.device])
-        self.assertEqual(response.context['excluded'], [f'Device {excluded.name}'])
+        self.assertEqual(response.context['excluded'], [f'Device <strong>{excluded.name}</strong>'])

@@ -5,7 +5,7 @@ of that type, and a remove button. Changing the mode or type redraws just
 this row (EventTargetRowView); the picker keeps its objects when only the
 mode changes.
 {% endcomment %}
-<div class="calendar-target-row d-flex flex-wrap flex-md-nowrap gap-2 align-items-start px-2 pt-2">
+<div class="calendar-target-row">
   <div class="calendar-target-mode">
     <select name="target_mode" class="form-select" aria-label="{% trans 'Include or exclude' %}"
             hx-get="{% url 'plugins:netbox_calendar:event_target_row' %}" hx-trigger="change"
@@ -28,7 +28,7 @@ mode changes.
       {% endfor %}
     </select>
   </div>
-  <div class="calendar-target-picker flex-grow-1">
+  <div class="calendar-target-picker">
     {% if picker %}
       {{ picker }}
       {% for error in picker.errors %}<div class="form-text text-danger">{{ error }}</div>{% endfor %}

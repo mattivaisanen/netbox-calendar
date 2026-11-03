@@ -7,6 +7,8 @@
   Adding or changing a row no longer redraws the form. **Result** under
   the rows says in plain words what the event covers and counts the
   devices. The rule itself is unchanged.
+- Tags can be a condition: an event on a tag covers the devices and VMs
+  carrying it.
 - The event page shows the event's journal where the empty Comments panel
   was: the five newest entries and a form to add one without leaving the
   page. The Journal tab still lists them all. Comments (set in the edit

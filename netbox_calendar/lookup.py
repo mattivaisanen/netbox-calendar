@@ -4,7 +4,7 @@ Which objects an event is about, and which events are about an object.
 An event's links (EventObject) are read as targeting rules:
 
 - Links to a site, location, region, site group, rack, cluster, device
-  role, device type, manufacturer, platform or tenant are *criteria* that
+  role, device type, manufacturer, platform, tenant or tag are *criteria* that
   pick devices and VMs. Different kinds AND together, several of one kind
   OR together: role "access" or "core", and location "Floor 2".
 - Devices, VMs and any other object (circuit, interface, ...) linked one by
@@ -109,7 +109,7 @@ def scopes(obj):
     """
     `obj` and, with the scope_rollup setting, where it sits (site, region,
     site group, location, rack, cluster, host device) and what it is (role,
-    type, manufacturer, platform, tenant). Components (interfaces, ports)
+    type, manufacturer, platform, tenant, tags). Components (interfaces, ports)
     take their device's.
     """
     if not get_setting('scope_rollup', True):
@@ -118,10 +118,10 @@ def scopes(obj):
     if label == 'dcim.device':
         around = (
             _site_scopes(obj.site) + _with_ancestors(obj.location) + [obj.rack, obj.cluster]
-            + _kind_scopes(obj) + [obj.device_type, obj.device_type.manufacturer]
+            + _kind_scopes(obj) + [obj.device_type, obj.device_type.manufacturer] + list(obj.tags.all())
         )
     elif label == 'virtualization.virtualmachine':
-        around = _site_scopes(obj.site) + [obj.cluster, obj.device] + _kind_scopes(obj)
+        around = _site_scopes(obj.site) + [obj.cluster, obj.device] + _kind_scopes(obj) + list(obj.tags.all())
     elif label == 'dcim.rack':
         around = _site_scopes(obj.site) + _with_ancestors(obj.location)
     elif label == 'dcim.location':
@@ -159,6 +159,7 @@ DEVICE_MATCHES = {
     'dcim.rack': lambda obj: Q(rack=obj),
     'virtualization.cluster': lambda obj: Q(cluster=obj),
     'tenancy.tenant': lambda obj: Q(tenant=obj),
+    'extras.tag': lambda obj: Q(tags=obj),
 }
 
 #: Types whose links can be excluded.

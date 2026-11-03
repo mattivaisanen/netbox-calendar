@@ -5,6 +5,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext
@@ -203,9 +204,13 @@ def reminder_other_field():
 
 
 def linkable_types():
-    """Object types events can be linked to: NetBox objects, this plugin's own left out."""
+    """
+    Object types events can be linked to: NetBox objects, this plugin's own
+    left out, and tags (a condition on devices and VMs).
+    """
+    linkable = ObjectType.objects.with_feature('bookmarks').exclude(app_label='netbox_calendar').values('pk')
     return ContentType.objects.filter(
-        pk__in=ObjectType.objects.with_feature('bookmarks').exclude(app_label='netbox_calendar').values('pk'),
+        Q(pk__in=linkable) | Q(app_label='extras', model='tag'),
     ).order_by('app_label', 'model')
 
 
@@ -216,7 +221,7 @@ INCLUDE, EXCLUDE = 'include', 'exclude'
 COMMON_TYPES = (
     'dcim.device', 'virtualization.virtualmachine', 'dcim.devicerole', 'dcim.devicetype', 'dcim.manufacturer',
     'dcim.platform', 'dcim.site', 'dcim.location', 'dcim.region', 'dcim.sitegroup', 'dcim.rack',
-    'virtualization.cluster', 'tenancy.tenant', 'circuits.circuit',
+    'virtualization.cluster', 'tenancy.tenant', 'extras.tag', 'circuits.circuit',
 )
 
 

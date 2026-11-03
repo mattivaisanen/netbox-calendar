@@ -1,63 +1,70 @@
 {% load i18n %}
 {% comment %}
 The event form's objects (TargetFieldsMixin): rows of "include or exclude,
-type, objects" with an Add button, then the Result in plain words. Rows are
-added, redrawn and removed in place, so the rest of the form stays put. The
-Result reloads from event_targets_preview when a field changes.
+type, objects" with an Add button, then the Result card. Rows are added,
+redrawn and removed in place, so the rest of the form stays put. The Result
+reloads from event_targets_preview when a field changes or a row goes.
 {% endcomment %}
 <div class="field-group mb-5" id="target_fields">
   <div class="row">
     <h2 class="col-9 offset-3">{% trans "Objects" %}</h2>
   </div>
-  <div class="row mb-3">
-    <label class="col-sm-3 col-form-label text-lg-end">{% trans "Affects" %}</label>
-    <div class="col">
-      <div class="border rounded">
-        <div id="calendar_target_rows">
-          {% for row in form.target_rows %}
-            {% include 'netbox_calendar/inc/target_row.html' with exclude=row.exclude label=row.label picker=row.picker type_groups=row.type_groups %}
-          {% endfor %}
-        </div>
-        <div class="p-2">
-          <button type="button" class="btn btn-primary"
-                  hx-get="{% url 'plugins:netbox_calendar:event_target_row' %}"
-                  hx-target="#calendar_target_rows" hx-swap="beforeend">
-            <i class="mdi mdi-plus-thick"></i> {% trans "Add" %}
-          </button>
-        </div>
-      </div>
-      <div class="form-text">{% trans "One row per type. Several objects in one row: any of them." %}</div>
+  <div class="card mb-3">
+    <div class="calendar-target-head text-secondary small fw-bold border-bottom">
+      <div>{% trans "Include or exclude" %}</div>
+      <div>{% trans "Type" %}</div>
+      <div>{% trans "Objects (any of them)" %}</div>
+      <div></div>
+    </div>
+    <div id="calendar_target_rows">
+      {% for row in form.target_rows %}
+        {% include 'netbox_calendar/inc/target_row.html' with exclude=row.exclude label=row.label picker=row.picker type_groups=row.type_groups %}
+      {% endfor %}
+    </div>
+    <div class="card-footer">
+      <button type="button" class="btn btn-primary"
+              hx-get="{% url 'plugins:netbox_calendar:event_target_row' %}"
+              hx-target="#calendar_target_rows" hx-swap="beforeend">
+        <i class="mdi mdi-plus-thick"></i> {% trans "Add" %}
+      </button>
     </div>
   </div>
-  <div class="row mb-3">
-    <label class="col-sm-3 col-form-label text-lg-end">{% trans "Result" %}</label>
-    <div class="col" id="calendar_target_result"
-         hx-get="{% url 'plugins:netbox_calendar:event_targets_preview' %}"
-         hx-trigger="load, change from:#form_fields delay:300ms, calendar:refresh from:body delay:100ms"
-         hx-include="#form_fields" hx-swap="innerHTML">
-      <div class="border rounded p-3 text-secondary">{% trans "Working it out..." %}</div>
-    </div>
+  <div id="calendar_target_result"
+       hx-get="{% url 'plugins:netbox_calendar:event_targets_preview' %}"
+       hx-trigger="load, change from:#form_fields delay:300ms, calendarRefresh from:body delay:100ms"
+       hx-include="#form_fields" hx-swap="innerHTML">
+    <div class="card"><div class="card-body text-secondary">{% trans "Working it out..." %}</div></div>
   </div>
 </div>
 <style>
-  .calendar-target-mode { width: 9rem; }
-  .calendar-target-type { width: 14rem; }
-  #calendar_target_rows:empty { display: none; }
+  /* One grid for the header and every row, so all menus line up and keep their size. */
+  .calendar-target-head, .calendar-target-row {
+    display: grid; grid-template-columns: 10rem 16rem minmax(0, 1fr) 2.5rem;
+    gap: .5rem; align-items: start; padding: .5rem .75rem;
+  }
+  .calendar-target-row + .calendar-target-row { border-top: 1px solid var(--tblr-border-color); }
+  .calendar-target-row .btn { height: 100%; max-height: 2.4rem; }
+  @media (max-width: 767px) {
+    .calendar-target-head { display: none; }
+    .calendar-target-row { grid-template-columns: 1fr 1fr; }
+    .calendar-target-picker { grid-column: 1 / -1; }
+  }
 </style>
 <script>
-  // Remove a row, and refresh the Result after a row is removed, added or redrawn.
+  // Remove a row on its bin button; refresh the Result after a row is removed, added or redrawn.
   if (!window.calendarTargetRows) {
     window.calendarTargetRows = true;
+    const refresh = function () { document.body.dispatchEvent(new CustomEvent('calendarRefresh')); };
     document.addEventListener('click', function (event) {
       const button = event.target.closest('[data-calendar-remove-row]');
       if (button) {
         button.closest('.calendar-target-row').remove();
-        document.body.dispatchEvent(new Event('calendar:refresh'));
+        refresh();
       }
     });
     document.addEventListener('htmx:afterSettle', function (event) {
       if (event.target.closest && event.target.closest('#calendar_target_rows')) {
-        document.body.dispatchEvent(new Event('calendar:refresh'));
+        refresh();
       }
     });
   }
