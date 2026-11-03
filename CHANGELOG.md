@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- The event form's objects are rows: *Include* or *Exclude*, a type and
+  its objects, with a button to remove each row and **Add** for another.
+  Adding or changing a row no longer redraws the form. **Result** under
+  the rows says in plain words what the event covers and counts the
+  devices. The rule itself is unchanged.
+- On the event page, each linked object has its own row in the Objects
+  card with an unlink button on the right.
+- Fixed: rules didn't list VMs. Result, the event page (**Affected Virtual
+  Machines**), conflict warnings and notices (`vms`) now include the VMs a
+  rule covers.
+- Tags can be a condition: an event on a tag covers the devices and VMs
+  carrying it.
 - Event form: after the start, give the end as a **Length** (such as
   `1h 30m`) or an **End date**, picked with the **End by** buttons. Repeat
   is part of the same **When** section and follows the start: weekly must

@@ -144,29 +144,33 @@
       {# One row per kind: kinds AND together, objects within a kind OR together; excluded rows take objects out. #}
       <table class="table table-hover">
         {% for group in target_groups %}
-          <tr>
-            <td class="text-secondary small text-nowrap">
-              {% if group.exclude %}<i class="mdi mdi-minus-circle-outline text-danger" title="{% trans 'Excluded' %}"></i>{% endif %}
-              {{ group.name }}
-              {% if group.criterion and group.links|length > 1 %}<div class="small">{% trans "any of" %}</div>{% endif %}
-            </td>
-            <td>
-              {% for link in group.links %}
-                <span class="text-nowrap me-2">
-                  {% if link.object %}{{ link.object|linkify }}{% else %}<s>{{ link.object_repr }}</s> <span class="small text-secondary">({% trans "deleted" %})</span>{% endif %}
-                  {% if can_edit %}
-                    {# Opens a confirmation page; nothing is removed until it is confirmed. #}
-                    <a href="{% url 'plugins:netbox_calendar:event_unlink' pk=object.pk link_pk=link.pk %}" class="text-danger" title="{% trans 'Unlink' %}"><i class="mdi mdi-close-circle-outline"></i></a>
-                  {% endif %}
-                </span>
-              {% endfor %}
-            </td>
-          </tr>
+          {% for link in group.links %}
+            <tr>
+              <td class="text-secondary text-nowrap">
+                {% if forloop.first %}
+                  {% if group.exclude %}<i class="mdi mdi-minus-circle-outline text-danger" title="{% trans 'Excluded' %}"></i>{% endif %}
+                  {{ group.name }}
+                  {% if group.criterion and group.links|length > 1 %}<span class="small">({% trans "any of" %})</span>{% endif %}
+                {% endif %}
+              </td>
+              <td>
+                {% if link.object %}{{ link.object|linkify }}{% else %}<s>{{ link.object_repr }}</s> <span class="small text-secondary">({% trans "deleted" %})</span>{% endif %}
+              </td>
+              {% if can_edit %}
+                <td class="text-end text-nowrap">
+                  {# Opens a confirmation page; nothing is removed until it is confirmed. #}
+                  <a href="{% url 'plugins:netbox_calendar:event_unlink' pk=object.pk link_pk=link.pk %}" class="btn btn-sm btn-outline-danger" title="{% trans 'Unlink' %}">
+                    <i class="mdi mdi-link-variant-off" aria-hidden="true"></i>
+                  </a>
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
         {% endfor %}
         {% if object.filter_object_type %}
           <tr>
             <td class="text-secondary small">{% trans "Filter" %}</td>
-            <td>
+            <td{% if can_edit %} colspan="2"{% endif %}>
               {{ object.filter_object_type.name|bettertitle }}: <span class="font-monospace">{{ object.filter_query }}</span>
               <div class="small text-secondary">{% blocktrans count count=filter_count %}{{ count }} object matches now{% plural %}{{ count }} objects match now{% endblocktrans %}</div>
             </td>
@@ -206,6 +210,31 @@
         {% endif %}
       </table>
     </div>
+    {% if vms_total %}
+      <div class="card">
+        {# Every VM the event concerns, worked out like the devices above. #}
+        <h2 class="card-header">
+          {% trans "Affected Virtual Machines" %} <span class="badge text-bg-secondary">{{ vms_total }}</span>
+        </h2>
+        <table class="table table-hover">
+          <thead>
+            <tr><th>{% trans "Virtual machine" %}</th><th>{% trans "Site" %}</th><th>{% trans "Cluster" %}</th><th>{% trans "Role" %}</th><th>{% trans "Status" %}</th></tr>
+          </thead>
+          {% for vm in vms %}
+            <tr>
+              <td>{{ vm|linkify }}</td>
+              <td>{{ vm.site|linkify|placeholder }}</td>
+              <td>{{ vm.cluster|linkify|placeholder }}</td>
+              <td>{% if vm.role %}{% badge vm.role hex_color=vm.role.color %}{% else %}{{ ''|placeholder }}{% endif %}</td>
+              <td>{% badge vm.get_status_display bg_color=vm.get_status_color %}</td>
+            </tr>
+          {% endfor %}
+          {% if vms_more %}
+            <tr><td colspan="5" class="text-secondary small">{% blocktrans count count=vms_more %}and {{ count }} more virtual machine{% plural %}and {{ count }} more virtual machines{% endblocktrans %}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    {% endif %}
     <div class="card">
       <h2 class="card-header d-flex justify-content-between align-items-center">
         {% trans "People" %}

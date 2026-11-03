@@ -1,0 +1,57 @@
+{% load helpers %}
+{% load i18n %}
+{# What the event form's objects cover, in plain words (EventTargetsPreviewView). #}
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">{% trans "Result" %}</h3>
+    {% if included %}
+      <div class="card-actions">
+        <span class="badge text-bg-primary">
+          {% blocktrans count counter=device_count %}{{ counter }} device{% plural %}{{ counter }} devices{% endblocktrans %}
+        </span>
+        {% if vm_count %}
+          <span class="badge text-bg-primary">
+            {% blocktrans count counter=vm_count %}{{ counter }} VM{% plural %}{{ counter }} VMs{% endblocktrans %}
+          </span>
+        {% endif %}
+        {% if other_count %}
+          <span class="badge text-bg-secondary">
+            {% blocktrans count counter=other_count %}{{ counter }} other object{% plural %}{{ counter }} other objects{% endblocktrans %}
+          </span>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+  {% if not included %}
+    <div class="card-body text-secondary">{% trans "Nothing yet. Add a row above." %}</div>
+  {% else %}
+    <ul class="list-group list-group-flush">
+      {% for line in included %}
+        <li class="list-group-item d-flex align-items-center gap-3">
+          <span class="badge text-bg-success calendar-result-badge">{% trans "Include" %}</span><span>{{ line }}</span>
+        </li>
+      {% endfor %}
+      {% for line in excluded %}
+        <li class="list-group-item d-flex align-items-center gap-3">
+          <span class="badge text-bg-danger calendar-result-badge">{% trans "Exclude" %}</span><span>{{ line }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+    {% for heading, objects, more in found %}
+      {% if objects %}
+        <div class="card-body border-top">
+          <div class="text-secondary small fw-bold mb-2">{{ heading }}</div>
+          <div class="d-flex flex-wrap gap-1">
+            {% for obj in objects %}
+              <a href="{{ obj.get_absolute_url }}" class="badge border text-reset fw-normal" target="_blank">{{ obj }}</a>
+            {% endfor %}
+            {% if more %}
+              <span class="badge text-secondary fw-normal">{% blocktrans %}and {{ more }} more{% endblocktrans %}</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+</div>
+<style>.calendar-result-badge { min-width: 4.5rem; }</style>

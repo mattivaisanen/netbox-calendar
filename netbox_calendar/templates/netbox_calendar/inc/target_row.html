@@ -1,0 +1,42 @@
+{% load i18n %}
+{% comment %}
+One row of the event form's objects: include or exclude, a type, the objects
+of that type, and a remove button. Changing the mode or type redraws just
+this row (EventTargetRowView); the picker keeps its objects when only the
+mode changes.
+{% endcomment %}
+<div class="calendar-target-row">
+  <div class="calendar-target-mode">
+    <select name="target_mode" class="form-select" aria-label="{% trans 'Include or exclude' %}"
+            hx-get="{% url 'plugins:netbox_calendar:event_target_row' %}" hx-trigger="change"
+            hx-include="closest .calendar-target-row" hx-target="closest .calendar-target-row" hx-swap="outerHTML">
+      <option value="include"{% if not exclude %} selected{% endif %}>{% trans "Include" %}</option>
+      <option value="exclude"{% if exclude %} selected{% endif %}>{% trans "Exclude" %}</option>
+    </select>
+  </div>
+  <div class="calendar-target-type">
+    <select name="target_type" class="form-select" aria-label="{% trans 'Type of object' %}"
+            hx-get="{% url 'plugins:netbox_calendar:event_target_row' %}" hx-trigger="change"
+            hx-include="closest .calendar-target-row" hx-target="closest .calendar-target-row" hx-swap="outerHTML">
+      <option value="">{% trans "Choose a type..." %}</option>
+      {% for group, options in type_groups %}
+        <optgroup label="{{ group }}">
+          {% for value, name in options %}
+            <option value="{{ value }}"{% if value == label %} selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </optgroup>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="calendar-target-picker">
+    {% if picker %}
+      {{ picker }}
+      {% for error in picker.errors %}<div class="form-text text-danger">{{ error }}</div>{% endfor %}
+    {% else %}
+      <input type="text" class="form-control" disabled placeholder="{% trans 'Choose a type first' %}">
+    {% endif %}
+  </div>
+  <button type="button" class="btn btn-outline-danger btn-icon" data-calendar-remove-row title="{% trans 'Remove row' %}">
+    <i class="mdi mdi-trash-can-outline"></i>
+  </button>
+</div>

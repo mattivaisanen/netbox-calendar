@@ -12,7 +12,7 @@ occurrence and the reason.
 Who hears is also set per event type: the owner, people on the event whose
 role is notified, a NetBox group, users subscribed to an object the event
 concerns, and contacts assigned to one (e-mail only). Those objects are the
-included links and the affected devices; excluded ones are left out. Whoever made a change
+included links and the affected devices and VMs; excluded ones are left out. Whoever made a change
 is not told about their own change.
 """
 import logging
@@ -31,7 +31,7 @@ from tenancy.models import ContactAssignment
 
 from . import ical, message_template
 from .event_types import EVENT_TYPES
-from .lookup import Targets, affected_devices, describe, linked_objects
+from .lookup import Targets, affected_devices, affected_vms, describe, linked_objects
 from .models import EventObject, display_name
 from .plugin_settings import get_setting, on
 
@@ -49,7 +49,8 @@ def person(user):
     }
 
 
-#: At most this many affected devices are listed in a notice, or looked up for subscribers and contacts.
+#: At most this many affected devices (and as many VMs) are listed in a notice, or looked up for subscribers and
+#: contacts.
 DEVICES_LISTED = 50
 DEVICES_LOOKED_UP = 500
 
@@ -61,12 +62,13 @@ def _linked_objects(event):
 
 
 def _concerned_objects(event):
-    """The included objects and the affected devices, for subscribers and contacts."""
+    """The included objects and the affected devices and VMs, for subscribers and contacts."""
     objects = _linked_objects(event)
     seen = {(type(obj), obj.pk) for obj in objects}
-    for device in affected_devices(event)[:DEVICES_LOOKED_UP]:
-        if (type(device), device.pk) not in seen:
-            objects.append(device)
+    for found in (affected_devices(event), affected_vms(event)):
+        for obj in found[:DEVICES_LOOKED_UP]:
+            if (type(obj), obj.pk) not in seen:
+                objects.append(obj)
     return objects
 
 
@@ -202,6 +204,7 @@ def _data_and_context(event, kind, users, contacts, start, end, actor, offset, o
     objects = _linked_objects(event)
     objects_text = describe(event, targets)
     devices = list(affected_devices(event, targets).order_by('name')[:DEVICES_LISTED])
+    vms = list(affected_vms(event, targets).order_by('name')[:DEVICES_LISTED])
     link = ical.absolute_url(event.get_absolute_url())
     notice = str(EVENT_TYPES[kind][1])
     context = {
@@ -246,11 +249,12 @@ def _data_and_context(event, kind, users, contacts, start, end, actor, offset, o
         'occurrence': occurrence,
         'link': link,
         'url': event.get_absolute_url(),
-        # What the event concerns: in words, the included objects, the excluded ones and the affected devices.
+        # What the event concerns: in words, the included objects, the excluded ones and the affected devices and VMs.
         'objects_text': objects_text,
         'objects': [_object(obj) for obj in objects],
         'excluded': [_object(obj) for obj in targets.excluded],
         'devices': [_object(device) for device in devices],
+        'vms': [_object(vm) for vm in vms],
         'owner': person(event.event_owner),
         'people': [
             {'role': row.role.name, 'name': row.person_name, 'email': row.email}

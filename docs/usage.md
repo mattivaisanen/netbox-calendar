@@ -36,7 +36,7 @@ object's Events card, or **Schedule Event** above an object list.
 | Owner | Empty on a new event: you. Notified, and may always edit. |
 | Repeat | See [Repeating events](#repeating-events). |
 | Reminders | *Same as the event type*, *No reminders*, or *Pick for this event*: tick common times (15 minutes to 1 week before) and type any others in **Other times**, such as `3d, 45m`. |
-| Objects | What the event affects. **Add objects...** adds a picker for one kind, to match, include or exclude. See [Objects](#objects). |
+| Objects | What the event affects: rows of *Include* or *Exclude*, a type and its objects. **Result** says it in words. See [Objects](#objects). |
 | Objects by filter | Rarely needed; see [Events by filter](#events-by-filter). |
 
 Times are in NetBox's `TIME_ZONE`.
@@ -103,7 +103,7 @@ virtual machines, IP prefixes, and other plugins' models.
 |---|---|
 | Different kinds (a device role and a location) | **AND**: devices of that role in that location. |
 | Several of one kind (two device roles) | **OR**: devices of either role. |
-| *Except* (a location, a role, a device) | **NOT**: those devices are left out. |
+| *Exclude* rows (a location, a role, a device) | **NOT**: those devices are left out. |
 | Devices, VMs and other objects picked one by one | Always in, unless excluded. |
 
 Example: device roles *Access* and *Core*, location *Floor 2*, except
@@ -111,18 +111,23 @@ location *Floor 2 / Lab*, plus the device *edge-1*: every access or core
 device on floor 2 outside the lab, and edge-1 wherever it is.
 
 The kinds that match devices are sites, locations, regions, site groups,
-racks, clusters, device roles, device types, manufacturers, platforms and
+racks, clusters, device roles, device types, manufacturers, platforms, tags and
 tenants. Each covers what is under it, including devices added later: a
 region covers the devices of its sites, a location those of its child
-locations. The event page lists the result under **Affected Devices**, and
+locations. VMs match the same way, except on kinds they don't have
+(device type, manufacturer, location, rack). The event page lists the
+result under **Affected Devices** and **Affected Virtual Machines**, and
 the **Objects** card shows the rule in words.
 
 ### Adding objects
 
-- **On the event form:** **Add objects...** lists each kind under *Match*,
-  *Include one by one* or *Exclude*. Choosing one adds its picker; only the
-  kinds in use are shown. Editing the event shows what is linked; removing
-  an object from a picker unlinks it on save.
+- **On the event form:** **Add** adds a row. Pick *Include* or *Exclude*,
+  then a type, then the objects; the bin button removes the row. The type
+  menu lists kinds that pick devices and VMs (*Devices and VMs by* site,
+  role, tag, ...) apart from *Specific objects* (a device, a circuit, ...).
+  **Result** says in words what the rows cover and counts the devices;
+  **Show devices** lists them. Editing the event shows a row per kind
+  linked; removing an object unlinks it on save.
 - **On the event page:** **Link Objects** adds objects of any kind, with
   **Exclude** to leave them out. The cross next to an object removes it,
   after asking to confirm.

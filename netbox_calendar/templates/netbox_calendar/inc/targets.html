@@ -1,0 +1,83 @@
+{% load i18n %}
+{% comment %}
+The event form's objects (TargetFieldsMixin): rows of "include or exclude,
+type, objects" with an Add button, then the Result card. Rows are added,
+redrawn and removed in place, so the rest of the form stays put. The Result
+reloads from event_targets_preview when a field changes or a row goes.
+{% endcomment %}
+<div class="field-group mb-5" id="target_fields">
+  <div class="row">
+    <h2 class="col-9 offset-3">{% trans "Objects" %}</h2>
+  </div>
+  <div class="row">
+    <div class="col-sm-9 offset-sm-3">
+      <div class="calendar-targets">
+        <div class="card mb-3">
+          <div id="calendar_target_rows">
+            {% for row in form.target_rows %}
+              {% include 'netbox_calendar/inc/target_row.html' with exclude=row.exclude label=row.label picker=row.picker type_groups=row.type_groups %}
+            {% endfor %}
+          </div>
+          <div class="card-footer d-flex align-items-center gap-3">
+            <button type="button" class="btn btn-primary"
+                    hx-get="{% url 'plugins:netbox_calendar:event_target_row' %}"
+                    hx-target="#calendar_target_rows" hx-swap="beforeend">
+              <i class="mdi mdi-plus-thick"></i> {% trans "Add" %}
+            </button>
+            <span class="form-text m-0">{% trans "Several objects in one row: any of them. Exclude rows always win." %}</span>
+          </div>
+        </div>
+        <div id="calendar_target_result"
+             hx-get="{% url 'plugins:netbox_calendar:event_targets_preview' %}"
+             hx-trigger="load, change from:#form_fields delay:300ms, calendarRefresh from:body delay:100ms"
+             hx-include="#form_fields" hx-swap="innerHTML">
+          <div class="card"><div class="card-body text-secondary">{% trans "Working it out..." %}</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+/* The objects rows widen past the input column, equally on both sides, when the page has room. */
+.tab-pane:has(#target_fields) { container-type: inline-size; }
+.calendar-target-row {
+  display: grid; grid-template-columns: 8rem minmax(0, 1fr) 2.5rem;
+  grid-template-areas: "mode type remove" "picker picker picker";
+  gap: .5rem; align-items: start; padding: .75rem;
+}
+.calendar-target-row + .calendar-target-row { border-top: 1px solid var(--tblr-border-color); }
+.calendar-target-mode { grid-area: mode; }
+.calendar-target-type { grid-area: type; }
+.calendar-target-picker { grid-area: picker; }
+.calendar-target-row > .btn { grid-area: remove; height: 2.5rem; padding: 0; }
+@container (min-width: 1100px) {
+  .calendar-targets { margin: 0 -33.333%; }
+  .calendar-target-row {
+    grid-template-columns: 9rem 14rem minmax(0, 1fr) 2.5rem;
+    grid-template-areas: "mode type picker remove";
+  }
+}
+/* A picker with objects is as tall as the menus beside it, and long names don't push the search box onto a line of its own. */
+.calendar-target-picker .ts-wrapper.multi.has-items .ts-control { padding: 4px 7px 1px !important; min-height: 0; }
+.calendar-target-picker .ts-wrapper.multi .ts-control > div { margin: 1px 4px 2px 0; }
+.calendar-target-picker .ts-control > input { min-width: 2rem !important; }
+</style>
+<script>
+  // Remove a row on its bin button; refresh the Result after a row is removed, added or redrawn.
+  if (!window.calendarTargetRows) {
+    window.calendarTargetRows = true;
+    const refresh = function () { document.body.dispatchEvent(new CustomEvent('calendarRefresh')); };
+    document.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-calendar-remove-row]');
+      if (button) {
+        button.closest('.calendar-target-row').remove();
+        refresh();
+      }
+    });
+    document.addEventListener('htmx:afterSettle', function (event) {
+      if (event.target.closest && event.target.closest('#calendar_target_rows')) {
+        refresh();
+      }
+    });
+  }
+</script>

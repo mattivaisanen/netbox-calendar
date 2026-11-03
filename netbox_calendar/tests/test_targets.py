@@ -2,9 +2,10 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from dcim.models import DeviceRole, Location
+from dcim.models import DeviceRole, Location, Platform
+from virtualization.models import VirtualMachine
 
-from ..lookup import affected_devices, concerns, describe, events_for_object
+from ..lookup import affected_devices, affected_vms, concerns, describe, events_for_object
 from ..models import Event, EventObject
 from .utils import make_device, make_event, make_user
 
@@ -76,6 +77,26 @@ class TargetRuleTests(TestCase):
         self.assertIn(self.event, events_for_object(self.access, events))
 
 
+class VMTargetTests(TestCase):
+    """VMs meet criteria like devices do; a kind VMs can't have (a location) matches none."""
+
+    def test_vms_follow_the_rule(self):
+        site = make_device().site
+        role = DeviceRole.objects.create(name='Server', slug='server', vm_role=True)
+        platform = Platform.objects.create(name='Windows Server', slug='windows-server')
+        vm = VirtualMachine.objects.create(name='vm-1', site=site, role=role, platform=platform)
+        event = make_event()
+        EventObject.objects.create(event=event, object=platform)
+        self.assertEqual(list(affected_vms(event)), [vm])
+        self.assertTrue(concerns(event, vm))
+
+        EventObject.objects.create(event=event, object=role)
+        self.assertEqual(list(affected_vms(event)), [vm])
+        EventObject.objects.create(event=event, object=Location.objects.create(name='Hall', slug='hall', site=site))
+        self.assertEqual(list(affected_vms(event)), [])
+        self.assertFalse(concerns(event, vm))
+
+
 class TargetFormTests(TestCase):
     def setUp(self):
         self.admin = make_user('admin', is_superuser=True)
@@ -85,29 +106,39 @@ class TargetFormTests(TestCase):
         self.event.links.create(object=self.device)
         self.edit_url = reverse('plugins:netbox_calendar:event_edit', args=[self.event.pk])
 
-    def test_add_menu_shows_a_picker(self):
-        # Opening shows only the kinds in use.
+    def test_rows_show_what_is_linked(self):
+        # Opening shows one row per kind in use.
         form = self.client.get(self.edit_url).context['form']
-        self.assertIn('include__dcim__device', form.fields)
-        self.assertNotIn('exclude__dcim__location', form.fields)
+        rows = [(row['label'], row['exclude']) for row in form.target_rows]
+        self.assertEqual(rows, [('dcim.device', False)])
 
-        # Choosing "Exclude > Location" re-renders the section with that picker, keeping the device.
-        response = self.client.get(self.edit_url, {
-            'add_target': 'exclude__dcim__location', 'include__dcim__device': self.device.pk,
-        }, HTTP_HX_REQUEST='true')
-        form = response.context['form']
-        self.assertIn('exclude__dcim__location', form.fields)
-        self.assertEqual(form.initial['include__dcim__device'], [str(self.device.pk)])
-        self.assertEqual(form.initial['add_target'], '')
+        # A row switched to Exclude keeps its objects; a type Exclude doesn't offer starts the row over.
+        row_url = reverse('plugins:netbox_calendar:event_target_row')
+        response = self.client.get(row_url, {
+            'target_mode': 'exclude', 'target_type': 'dcim.device', 'include__dcim__device': self.device.pk,
+        })
+        self.assertEqual(response.context['picker'].name, 'exclude__dcim__device')
+        self.assertEqual(response.context['picker'].initial, [str(self.device.pk)])
+        response = self.client.get(row_url, {'target_mode': 'exclude', 'target_type': 'circuits.circuit'})
+        self.assertEqual(response.context['label'], '')
 
     def test_save_switches_and_removes_links(self):
         location = Location.objects.create(name='Hall', slug='hall', site=self.device.site)
         response = self.client.post(self.edit_url, {
             'title': self.event.title, 'event_type': self.event.event_type.pk, 'status': 'planned',
             'impact': 'none', 'start': timezone.localtime(self.event.start).strftime('%Y-%m-%d %H:%M:%S'), 'repeat': '',
-            'add_target': '', 'include__dcim__devicerole': [self.device.role.pk],
+            'objects_shown': '1', 'include__dcim__devicerole': [self.device.role.pk],
             'exclude__dcim__location': [location.pk],
         })
         self.assertEqual(response.status_code, 302)
         links = {(link.object, link.exclude) for link in self.event.links.all()}
         self.assertEqual(links, {(self.device.role, False), (location, True)})
+
+    def test_preview_counts_what_the_pickers_cover(self):
+        excluded = make_device('edge-2')
+        response = self.client.get(reverse('plugins:netbox_calendar:event_targets_preview'), {
+            'include__dcim__devicerole': [self.device.role.pk], 'exclude__dcim__device': [excluded.pk],
+        })
+        self.assertEqual(response.context['device_count'], 1)
+        self.assertEqual(list(response.context['devices']), [self.device])
+        self.assertEqual(response.context['excluded'], [f'Device <strong>{excluded.name}</strong>'])

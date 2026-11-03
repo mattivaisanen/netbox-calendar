@@ -10,10 +10,14 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.utils.text import capfirst
 from django.utils.translation import gettext as _
 from django.views.generic import View
 
 from dcim.models import Device
+from virtualization.models import VirtualMachine
 from extras.forms import JournalEntryForm
 from extras.models import JournalEntry
 from netbox.views import generic
@@ -21,7 +25,7 @@ from utilities.htmx import htmx_partial
 from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
 from . import agenda, filtersets, forms, ical, plugin_settings, recurrence, tables
-from .lookup import DEVICE_MATCHES, Targets, affected_devices, describe, filtered_objects
+from .lookup import DEVICE_MATCHES, Targets, affected_devices, affected_vms, describe, filtered_objects
 from .models import Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting
 from .permissions import can_edit, editable
 
@@ -146,8 +150,8 @@ class EventListView(generic.ObjectListView):
     table = tables.EventTable
 
 
-def _same_targets(event, other, devices):
-    """Whether two events concern a same object: one picked by both, or a device both affect."""
+def _same_targets(event, other, devices, vms):
+    """Whether two events concern a same object: one picked by both, or a device or VM both affect."""
     keys = set(event.links.filter(exclude=False).values_list('object_type_id', 'object_id'))
     shared = other.links.filter(exclude=False).values_list('object_type_id', 'object_id', 'object_type__app_label',
                                                            'object_type__model')
@@ -155,24 +159,26 @@ def _same_targets(event, other, devices):
         # A shared site or role alone is no clash: their devices are compared below.
         if (type_id, object_id) in keys and f'{app_label}.{model}' not in DEVICE_MATCHES:
             return True
-    return devices.filter(pk__in=affected_devices(other).values('pk')).exists()
+    return devices.filter(pk__in=affected_devices(other).values('pk')).exists() \
+        or vms.filter(pk__in=affected_vms(other).values('pk')).exists()
 
 
 def conflicts(event, user):
     """
     [(other event, occurrence)] overlapping this event's next occurrence
-    on a shared object: one both pick, or a device both affect.
+    on a shared object: one both pick, or a device or VM both affect.
     """
     if not plugin_settings.on('conflict_warnings'):
         return []
     occurrence = event.next_occurrence()
     if occurrence is None:
         return []
-    devices = affected_devices(event)
-    # Candidates: events linking something this one links, or one of its devices.
+    devices, vms = affected_devices(event), affected_vms(event)
+    # Candidates: events linking something this one links, or one of its devices or VMs.
     keys = list(event.links.filter(exclude=False).values_list('object_type_id', 'object_id'))
-    device_type = ContentType.objects.get_for_model(Device)
-    keys += [(device_type.pk, pk) for pk in devices.values_list('pk', flat=True)[:DEVICES_SHOWN]]
+    for found in (devices, vms):
+        content_type = ContentType.objects.get_for_model(found.model)
+        keys += [(content_type.pk, pk) for pk in found.values_list('pk', flat=True)[:DEVICES_SHOWN]]
     if not keys:
         return []
 
@@ -183,7 +189,7 @@ def conflicts(event, user):
     found = []
     for other in others.distinct().select_related('event_type'):
         overlapping = other.occurrences(occurrence.start, occurrence.end)
-        if overlapping and _same_targets(event, other, devices):
+        if overlapping and _same_targets(event, other, devices, vms):
             found.append((other, overlapping[0]))
     return found
 
@@ -221,6 +227,8 @@ class EventView(generic.ObjectView):
         targets = Targets(instance)
         devices = affected_devices(instance, targets).restrict(request.user, 'view')
         devices_total = devices.count()
+        vms = affected_vms(instance, targets).restrict(request.user, 'view')
+        vms_total = vms.count()
         now = timezone.now()
         upcoming = instance.occurrences(now, now + timedelta(days=3660))[:10] if instance.rrule else []
         return {
@@ -229,6 +237,9 @@ class EventView(generic.ObjectView):
             'devices': devices.select_related('site', 'role', 'device_type').order_by('name')[:DEVICES_SHOWN],
             'devices_total': devices_total,
             'devices_more': max(devices_total - DEVICES_SHOWN, 0),
+            'vms': vms.select_related('site', 'cluster', 'role').order_by('name')[:DEVICES_SHOWN],
+            'vms_total': vms_total,
+            'vms_more': max(vms_total - DEVICES_SHOWN, 0),
             'filter_count': (filtered_objects(instance).count() if instance.filter_object_type_id else None),
             'people': instance.people.select_related('role', 'user', 'group', 'contact'),
             'upcoming': upcoming,
@@ -269,6 +280,9 @@ def journal_context(request, event):
 class EventEditView(generic.ObjectEditView):
     queryset = Event.objects.all()
     form = forms.EventForm
+    # The objects section is drawn as three boxes (inc/targets.html).
+    template_name = 'netbox_calendar/event_edit.html'
+    htmx_template_name = 'netbox_calendar/inc/event_form.html'
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -328,6 +342,126 @@ class EventChangeMixin(ConditionalLoginRequiredMixin):
         if not can_edit(request.user, event):
             raise PermissionDenied(_('You may not change this event.'))
         return event
+
+
+def _names(objects):
+    """ "<b>a</b>", "<b>a</b> or <b>b</b>", "<b>a</b>, <b>b</b> or <b>c</b>" (HTML)."""
+    names = [format_html('<strong>{}</strong>', obj) for obj in objects]
+    if len(names) == 1:
+        return names[0]
+    return format_html(_('{names} or {last}'), names=mark_safe(', '.join(names[:-1])), last=names[-1])
+
+
+def _phrase(objects, first=False):
+    """ "site <b>Tampere 1</b> or <b>Tampere 2</b>" for objects of one type (HTML)."""
+    name = objects[0]._meta.verbose_name
+    return format_html('{} {}', capfirst(name) if first else name, _names(objects))
+
+
+def _by_type(objects):
+    """[[objects of one type], ...] in the order the types first appear."""
+    groups = {}
+    for obj in objects:
+        groups.setdefault(type(obj), []).append(obj)
+    return list(groups.values())
+
+
+class EventTargetRowView(ConditionalLoginRequiredMixin, View):
+    """
+    One row of the event form's objects section (HTMX): a new, empty row,
+    or a row redrawn after its mode or type changed. Objects already picked
+    stay when only the mode changes.
+    """
+    def get(self, request):
+        if not request.user.has_perm('netbox_calendar.view_event'):
+            raise PermissionDenied
+        exclude = request.GET.get('target_mode') == forms.EXCLUDE
+        label = request.GET.get('target_type', '')
+        values = []
+        for key in request.GET:
+            parsed = forms.parse_target_field(key)
+            if parsed and parsed[0] == label:
+                values += [pk for pk in request.GET.getlist(key) if pk.isdigit()]
+        form = forms.TargetRowForm(exclude=exclude, label=label, values=values)
+        return render(request, 'netbox_calendar/inc/target_row.html', {
+            'exclude': form.exclude, 'label': form.label, 'picker': form.picker, 'type_groups': form.type_groups,
+        })
+
+
+class EventTargetsPreviewView(ConditionalLoginRequiredMixin, View):
+    """
+    The event form's Result (HTMX): reads the objects rows and the filter
+    from the address, as the form would save them, and says in plain words
+    what the event covers and how many devices and VMs that is.
+    """
+    template_name = 'netbox_calendar/inc/target_summary.html'
+    LIMIT = 30
+
+    def get(self, request):
+        if not request.user.has_perm('netbox_calendar.view_event'):
+            raise PermissionDenied
+        types = {forms.type_label(content_type): content_type for content_type in forms.linkable_types()}
+        objects = []
+        for key in request.GET:
+            parsed = forms.parse_target_field(key)
+            if not parsed or parsed[0] not in types:
+                continue
+            label, exclude = parsed
+            pks = [pk for pk in request.GET.getlist(key) if pk.isdigit()]
+            model = types[label].model_class()
+            objects += [(obj, exclude) for obj in model.objects.restrict(request.user, 'view').filter(pk__in=pks)]
+
+        # An event not saved, with the filter as typed, so the rule reads as on save.
+        event = Event()
+        filter_type = request.GET.get('filter_object_type')
+        if filter_type and filter_type.isdigit() and ContentType.objects.filter(pk=filter_type).exists():
+            event.filter_object_type_id = int(filter_type)
+            event.filter_query = request.GET.get('filter_query', '')
+        targets = Targets(event, objects)
+
+        # The rule as lines (HTML): what is in, then what is left out.
+        included = []
+        criteria = [_phrase(objs) for objs in targets.criteria.values()]
+        if targets.filter_is_criterion:
+            criteria.append(format_html(_('matching the filter <code>{}</code>'), event.filter_query))
+        if criteria:
+            joined = mark_safe(format_html(' <strong>{}</strong> ', _('and')).join(criteria))
+            included.append(format_html(_('Devices and VMs with {}'), joined))
+        included += [_phrase(objs, first=True) for objs in _by_type(targets.picked)]
+        if event.filter_object_type_id and not targets.filter_is_criterion and targets.filter_model:
+            included.append(format_html(
+                _('{} matching the filter <code>{}</code>'),
+                targets.filter_model._meta.verbose_name_plural.capitalize(), event.filter_query,
+            ))
+        excluded = []
+        for objs in _by_type(targets.excluded):
+            if objs[0]._meta.label_lower in DEVICE_MATCHES:
+                excluded.append(format_html(_('Devices and VMs with {}'), _phrase(objs)))
+            else:
+                excluded.append(_phrase(objs, first=True))
+
+        devices = affected_devices(event, targets).restrict(request.user, 'view').order_by('name')
+        device_count = devices.count()
+        vms = affected_vms(event, targets).restrict(request.user, 'view').order_by('name')
+        vm_count = vms.count()
+        others = [obj for obj in targets.picked if not isinstance(obj, (Device, VirtualMachine))]
+        if event.filter_object_type_id and not targets.filter_is_criterion and targets.filtered is not None:
+            others_count = len(others) + targets.filtered.count()
+        else:
+            others_count = len(others)
+        return render(request, self.template_name, {
+            'included': included,
+            'excluded': excluded,
+            'device_count': device_count,
+            'devices': devices[:self.LIMIT],
+            'more_devices': max(device_count - self.LIMIT, 0),
+            'vm_count': vm_count,
+            'found': (
+                (_('Devices'), devices[:self.LIMIT], max(device_count - self.LIMIT, 0)),
+                (_('Virtual machines'), vms[:self.LIMIT], max(vm_count - self.LIMIT, 0)),
+            ),
+            'other_count': others_count,
+        })
 
 
 class EventLinkView(EventChangeMixin, View):
