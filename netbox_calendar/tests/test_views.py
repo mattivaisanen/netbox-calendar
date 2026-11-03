@@ -73,6 +73,28 @@ class PageTests(TestCase):
         self.assertEqual(event.links.get().object, self.device)
         self.assertTrue(EventPerson.objects.filter(event=event, user=engineer, role=role).exists())
 
+    def test_reminders_from_tick_boxes_and_text(self):
+        event_type = EventType.objects.get(slug='upgrade')
+        response = self.client.post(url('eventtype_edit', event_type.pk), {
+            'name': event_type.name, 'slug': event_type.slug, 'color': event_type.color,
+            'default_duration': event_type.default_duration,
+            'reminder_presets': ['60', '1440'], 'reminder_other': '3d, 45m',
+        })
+        self.assertEqual(response.status_code, 302)
+        event_type.refresh_from_db()
+        self.assertEqual(event_type.reminders, [4320, 1440, 60, 45])
+
+        # The edit form ticks the common times and lists the rest as text.
+        form = self.client.get(url('eventtype_edit', event_type.pk)).context['form']
+        self.assertEqual(form.initial['reminder_presets'], ['1440', '60'])
+        self.assertEqual(form.initial['reminder_other'], '3d, 45m')
+
+        # An event with its own reminders opens with them picked.
+        self.event.reminders = [15]
+        self.event.save()
+        form = self.client.get(url('event_edit', self.event.pk)).context['form']
+        self.assertEqual(form.initial['reminder_source'], 'own')
+
     def test_skip_and_restore_an_occurrence(self):
         occurrence = self.event.next_occurrence()
         value = occurrence.start.isoformat()
