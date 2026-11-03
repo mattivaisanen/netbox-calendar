@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Upcoming Events widget: the start time now sits on the same line as the event title.
+
 ## 0.1.1 (2026-11-03)
 
 - iCal feed: time zone rules start in 1970 so they cover events of every
