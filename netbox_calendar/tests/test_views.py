@@ -72,6 +72,43 @@ class PageTests(TestCase):
         self.assertEqual(event.links.get().object, self.device)
         self.assertTrue(EventPerson.objects.filter(event=event, user=engineer, role=role).exists())
 
+    def test_end_by_length_or_end_date_and_repeat_tabs(self):
+        start = (timezone.localtime() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
+        data = {
+            'title': 'Firmware upgrade', 'event_type': EventType.objects.get(slug='upgrade').pk,
+            'status': 'planned', 'impact': 'none', 'start': start.strftime('%Y-%m-%d %H:%M:%S'),
+            'length': '1h 30m', 'end': (start + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S'),
+            'repeat': 'weekly', 'repeat_interval': 1, 'repeat_until': '2030-01-01', 'repeat_count': 4,
+        }
+        # The open tabs decide: the length, and the number of times.
+        response = self.client.post(url('event_add'), {**data, 'end_by': 'length', 'repeat_end_by': 'count'})
+        self.assertEqual(response.status_code, 302)
+        event = Event.objects.get(title='Firmware upgrade')
+        self.assertEqual(event.end - event.start, timedelta(minutes=90))
+        self.assertIn('COUNT=4', event.rrule)
+        self.assertNotIn('UNTIL', event.rrule)
+        # The edit form opens with the length filled in.
+        self.assertEqual(self.client.get(url('event_edit', event.pk)).context['form'].initial['length'], '1h 30m')
+
+        # The other tabs: the end date, and the last day.
+        response = self.client.post(url('event_edit', event.pk), {**data, 'end_by': 'end', 'repeat_end_by': 'until'})
+        self.assertEqual(response.status_code, 302)
+        event.refresh_from_db()
+        self.assertEqual(event.end - event.start, timedelta(hours=5))
+        self.assertIn('UNTIL=2030', event.rrule)
+        self.assertNotIn('COUNT', event.rrule)
+
+        # A weekly repeat must include the start's weekday, and cannot end before the start.
+        other_day = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][(start.weekday() + 1) % 7]
+        response = self.client.post(url('event_edit', event.pk), {
+            **data, 'repeat_weekdays': [other_day], 'repeat_until': '2020-01-01', 'repeat_end_by': 'until',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.context['form'].errors), {'repeat_weekdays', 'repeat_until'})
+
+        # The date pickers start the week on the configured day (flatpickr: 1 = Monday).
+        self.assertContains(self.client.get(url('event_add')), 'data-first-weekday="1"')
+
     def test_edit_keeps_links_and_lists_role_devices(self):
         # The edit form shows the linked device, so saving it unchanged keeps the link.
         form = self.client.get(url('event_edit', self.event.pk)).context['form']

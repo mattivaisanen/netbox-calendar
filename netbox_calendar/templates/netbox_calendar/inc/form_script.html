@@ -1,0 +1,79 @@
+{% comment %}
+Shared by the calendar's form widgets (forms.py). Included by each widget but
+set up once per page; it runs again after HTMX swaps part of a form.
+- Date pickers: NetBox's flatpickr starts weeks on Sunday and is not set up
+  again after HTMX swaps. This sets them up with the calendar's first
+  weekday and shades Saturdays and Sundays.
+- Tabs (TabbedGroups): shown in NetBox's tab style, and the open tab is kept
+  in a hidden field (TabChoiceInput) so the form knows which value to use.
+{% endcomment %}
+<style>
+  .flatpickr-day.nbcal-weekend:not(.selected):not(.startRange):not(.endRange):not(.inRange):not(:hover) {
+    background-color: rgba(0, 0, 0, .07);
+  }
+  .flatpickr-weekday.nbcal-weekend { opacity: .65; }
+</style>
+<script>
+(function () {
+  if (window.nbcalForm) { return; }
+
+  // flatpickr counts weekdays from Sunday (0) to Saturday (6).
+  function isWeekend(day) { return day === 0 || day === 6; }
+
+  // NetBox's own picker options (dateSelector.ts).
+  var DATE = {allowInput: true};
+  var DATETIME = {allowInput: true, enableSeconds: true, enableTime: true, time_24hr: true};
+
+  // (Re)create the picker with the calendar's first weekday. NetBox creates
+  // them only when the page loads, so this also covers parts of the form
+  // that HTMX shows again.
+  function setupPicker(input) {
+    if (input.nbcalPicker || !window.flatpickr) { return; }
+    input.nbcalPicker = true;
+    var first = parseInt(input.dataset.firstWeekday, 10) || 0;
+    var options = input.classList.contains('datetime-picker') ? DATETIME : DATE;
+    var picker = window.flatpickr(input, Object.assign({}, options, {
+      locale: {firstDayOfWeek: first},
+      onDayCreate: [function (dates, text, instance, day) {
+        if (isWeekend(day.dateObj.getDay())) { day.classList.add('nbcal-weekend'); }
+      }],
+    }));
+    if (picker.weekdayContainer) {
+      picker.weekdayContainer.querySelectorAll('.flatpickr-weekday').forEach(function (cell, index) {
+        cell.classList.toggle('nbcal-weekend', isWeekend((first + index % 7) % 7));
+      });
+    }
+  }
+
+  function setupTabs(choice) {
+    var tabs = JSON.parse(choice.dataset.nbcalTabs);
+    Object.keys(tabs).forEach(function (fieldId) {
+      var field = document.getElementById(fieldId);
+      var pane = field && field.closest('.tab-pane');
+      var button = pane && document.querySelector('[data-bs-target="#' + pane.id + '"]');
+      if (!button) { return; }
+      button.closest('.nav').classList.replace('nav-pills', 'nav-tabs');
+      if (!button.nbcalTab) {
+        button.nbcalTab = true;
+        button.addEventListener('shown.bs.tab', function () { choice.value = tabs[fieldId]; });
+      }
+      if (!choice.value && pane.classList.contains('active')) {
+        choice.value = tabs[fieldId];
+      } else if (choice.value === tabs[fieldId] && !button.classList.contains('active')) {
+        // Reopen the tab that was open before the form was shown again.
+        button.click();
+      }
+    });
+  }
+
+  function setup() {
+    document.querySelectorAll('input[data-first-weekday]').forEach(setupPicker);
+    document.querySelectorAll('input[data-nbcal-tabs]').forEach(setupTabs);
+  }
+
+  window.nbcalForm = {setup: setup};
+  // After NetBox's own setup, which runs when the page is ready.
+  if (document.readyState === 'complete') { setup(); } else { window.addEventListener('load', setup); }
+  document.addEventListener('htmx:afterSettle', setup);
+})();
+</script>

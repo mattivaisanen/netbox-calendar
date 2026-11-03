@@ -30,8 +30,9 @@ object's Events card, or **Schedule Event** above an object list.
 | Title, Type | The type sets the color, default length, reminders and who is notified. |
 | Status | *Planned*, *Confirmed*, *In progress*, *Done* or *Cancelled*. |
 | Impact | *None*, *Degraded* or *Outage*. Shown on the calendar; outage and degraded events show as busy in calendar apps. |
-| Start, End | Empty end: the type's default length. |
-| All day | Whole days in NetBox's time zone. End is then the last day. |
+| Start | When the event begins. |
+| Length / End date | Two tabs; the open one counts. **Length** such as `30m`, `2h` or `1d 4h`, or **End date** as a time. Empty: the type's default length. |
+| All day | Whole days in NetBox's time zone. Length is then in days (`1d` is the start day only) and End date is the last day. |
 | Owner | Empty on a new event: you. Notified, and may always edit. |
 | Repeat | See [Repeating events](#repeating-events). |
 | Reminders | *Same as the event type*, *No reminders*, or *Pick for this event*: tick common times (15 minutes to 1 week before) and type any others in **Other times**, such as `3d, 45m`. |
@@ -54,7 +55,12 @@ Pick how the event repeats:
 | Yearly | every year on 1 September |
 | Custom | any iCal rule (RFC 5545 `RRULE`) |
 
-Each can end on a date or after a number of times, or run without an end.
+Repeat sits in the **When** section and follows the start: a weekly event
+must repeat on the start's weekday (it is ticked by default, and more days
+can be added), and the monthly and yearly kinds take their day from the
+start. Each can end on a date (**Until** tab, not before the start) or after
+a number of times (**Times** tab), or run without an end; only the open tab
+counts.
 The monthly weekday follows the start: a start on the 4th Thursday repeats
 on the 4th Thursday, a start on the 5th (last) Thursday on the last one.
 

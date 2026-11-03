@@ -118,7 +118,7 @@ SETTINGS = (
     ),
     Setting(
         'first_weekday', _('First day of the week'),
-        _('The first column of the month view.'),
+        _('The first column of the month view and the first day in date pickers.'),
         KIND_CHOICE, choices=WEEKDAY_CHOICES,
     ),
     Setting(
