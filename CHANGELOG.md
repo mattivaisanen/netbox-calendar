@@ -5,8 +5,8 @@
 - Fixed: tick boxes (reminder times, *Notify on*, repeat weekdays) showed
   as empty text fields stacked above their labels. They now sit side by
   side as NetBox checkboxes.
-- Fixed: skipping, moving or restoring an occurrence failed with a
-  NameError (missing import after a merge).
+- Fixed: skipping, moving or bringing back an occurrence failed with
+  `NameError: name '_' is not defined`.
 - **Edit** on an occurrence replaces **Skip**: skip it, move it to another
   time, or bring it back. Each needs a reason, shown on the event page,
   in the event's journal and change log, and in the *Changed* notice

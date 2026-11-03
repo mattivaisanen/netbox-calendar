@@ -22,7 +22,7 @@ from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.mail import EmailMultiAlternatives
 from django.utils import formats, timezone
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext as _
 
 from core.models import ObjectType
 from extras.events import EventContext, flush_events

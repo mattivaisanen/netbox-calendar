@@ -52,6 +52,16 @@ class EditNoticeTests(TestCase):
         self.assertIn('moved to', data['message'])
         self.assertEqual(data['start'], (original + timedelta(hours=3)).isoformat())
 
+    def test_occurrence_info_for_each_action(self):
+        event = make_event(owner=self.owner, rrule='FREQ=DAILY')
+        change = OccurrenceChange(
+            event=event, original_start=event.start, start=event.start + timedelta(hours=1),
+            end=event.end + timedelta(hours=1), reason='Vendor late',
+        )
+        for action in (notifications.SKIPPED, notifications.MOVED, notifications.RESTORED):
+            with self.subTest(action=action):
+                self.assertIn('Occurrence of', notifications.occurrence_info(change, action)['text'])
+
     def test_scheduled_then_cancelled(self):
         with mock.patch.object(notifications, 'notify') as notify:
             event = make_event(owner=self.owner, status=EventStatusChoices.PLANNED)
