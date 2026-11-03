@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: skipping, moving or bringing back an occurrence failed with
+  `NameError: name '_' is not defined`.
 - **Edit** on an occurrence replaces **Skip**: skip it, move it to another
   time, or bring it back. Each needs a reason, shown on the event page,
   in the event's journal and change log, and in the *Changed* notice
