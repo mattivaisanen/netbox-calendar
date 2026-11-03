@@ -1,10 +1,12 @@
+import json
 from datetime import timedelta
 from unittest import mock
 
 from django.core import mail
 from django.test import TestCase
 
-from extras.models import Notification
+from core.models import ObjectType
+from extras.models import EventRule, Notification, Webhook
 from tenancy.models import Contact
 from users.models import Group
 
@@ -93,6 +95,42 @@ class EditNoticeTests(TestCase):
         self.assertEqual(name, 'event.ics')
         self.assertIn('METHOD:REQUEST', content)
         self.assertTrue(mimetype.startswith('text/calendar'))
+
+    def test_notices_are_event_rule_triggers(self):
+        from extras.forms.model_forms import EventRuleForm
+
+        choices = dict(EventRuleForm.base_fields['event_types'].choices)
+        self.assertIn('netbox_calendar.scheduled', choices)
+        self.assertIn('netbox_calendar.reminder', choices)
+
+    def test_event_rule_webhook_body(self):
+        """A notice runs Event Rules, and a body template written for
+        netbox-change-approval's data renders with it."""
+        event = make_event(owner=self.owner)
+        webhook = Webhook.objects.create(
+            name='Chat', payload_url='https://chat.invalid/hook',
+            body_template=(
+                '{"head": {{ data.display | tojson }}, "line": {{ data.detail | tojson }}, '
+                '"text": {{ data.message | tojson }}, "url": {{ data.link | tojson }}, '
+                '"to": {{ data.recipients | tojson }}, "mail": {{ data.recipient_emails | tojson }}}'
+            ),
+        )
+        rule = EventRule.objects.create(
+            name='Calendar to chat', event_types=['netbox_calendar.scheduled'],
+            action_type='webhook', action_object=webhook,
+        )
+        rule.object_types.set([ObjectType.objects.get_for_model(event)])
+
+        with mock.patch('extras.event_rules.get_queue') as get_queue:
+            notifications.notify(event, NoticeChoices.SCHEDULED, actor=self.editor)
+        params = get_queue.return_value.enqueue.call_args.kwargs
+        self.assertEqual(params['event_type'], 'netbox_calendar.scheduled')
+
+        body = json.loads(webhook.render_body({'data': params['data']}))
+        self.assertEqual(body['head'], 'Firmware update')
+        self.assertIn('by ', body['line'])
+        self.assertIn('Firmware update', body['text'])
+        self.assertEqual(body['mail'], 'owner@example.com')
 
     def test_type_can_turn_a_notice_off(self):
         event = make_event(owner=self.owner)

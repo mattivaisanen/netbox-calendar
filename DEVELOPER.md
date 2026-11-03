@@ -26,6 +26,7 @@ events repeat, how notices are sent or who may edit.
 | `permissions.py` | The edit rule: owner, editing role, superuser or the `manage` action. `editable()` narrows a queryset, `can_edit()` checks one event. |
 | `signals.py` | Edit notices (scheduled, changed, cancelled), collected per transaction and sent on commit. |
 | `jobs.py` | The five-minute system job: automatic status, reminders, start and end notices, each sent once (`SentNotice`). |
+| `event_types.py` | The plugin's NetBox event types, registered on import (before NetBox builds the Event Rule form). |
 | `notifications.py` | Recipients, the event data, and the three channels: bell, Event Rules, direct e-mail. |
 | `message_template.py` | The Jinja2 notice text, rendered in a sandbox. |
 | `ical.py` | RFC 5545 output: feed, `.ics` download and e-mail invites, with a generated `VTIMEZONE`. |

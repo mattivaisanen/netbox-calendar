@@ -77,7 +77,14 @@ ticketing system, an SMS gateway, a script.
    cancelled*, ...), action type **Webhook**, and the webhook.
 
 Event Rules run even when nobody is notified directly, so a rule can post
-every event to a team channel.
+every event to a team channel. They run only for notices the event's type
+sends (its **Notify on** list).
+
+Pick the calendar's own event types, not NetBox's *Object created*,
+*Object updated* and *Object deleted*. Those carry the raw API object
+(no `message`, `link` or recipients), fire once per saved row (an event,
+each of its objects and people), and a body template that reads a missing
+field with `tojson` fails in the worker, so nothing arrives.
 
 Add **conditions** to the rule to narrow it, for example only outages:
 
@@ -101,6 +108,8 @@ Available in body templates as `{{ data.<field> }}` and in conditions:
 | `notice` | `reminder` (`scheduled`, `changed`, `cancelled`, `reminder`, `started`, `ended`) |
 | `event` | `Event reminder` |
 | `id`, `title` | `42`, `Replace line cards in agg-3` |
+| `display` | the event's name, same as `title` |
+| `detail` | one short line: `when`, plus `, by <name>` for a change someone made |
 | `event_type` | `Planned maintenance` |
 | `status`, `impact` | `confirmed`, `degraded` |
 | `start`, `end` | the occurrence, ISO 8601: `2026-12-02T21:00:00+02:00` |
