@@ -49,7 +49,7 @@
               {% if entry.is_running %}<span class="badge text-bg-orange ms-1">{% trans "Running" %}</span>{% endif %}
               {% if entry.event %}
                 <div class="small text-secondary text-truncate">
-                  {% for link in entry.event.links.all|slice:":5" %}{{ link.object_repr }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                  {% for link in entry.event.links.all|slice:":5" %}{% if link.exclude %}not {% endif %}{{ link.object_repr }}{% if not forloop.last %}, {% endif %}{% endfor %}
                 </div>
               {% endif %}
             </div>

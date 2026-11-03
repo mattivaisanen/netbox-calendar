@@ -57,7 +57,7 @@ class PageTests(TestCase):
             'start': start.strftime('%Y-%m-%d %H:%M:%S'),
             'repeat': 'monthly_weekday',
             'repeat_interval': 1,
-            'link_devices': [self.device.pk],
+            'include__dcim__device': [self.device.pk],
             'people_role': role.pk,
             'people_users': [engineer.pk],
         })
@@ -72,14 +72,15 @@ class PageTests(TestCase):
     def test_edit_keeps_links_and_lists_role_devices(self):
         # The edit form shows the linked device, so saving it unchanged keeps the link.
         form = self.client.get(url('event_edit', self.event.pk)).context['form']
-        self.assertEqual(list(form.initial['link_devices']), [self.device.pk])
+        self.assertEqual(list(form.initial['include__dcim__device']), [self.device.pk])
 
         # Swap the device for its role: the role's devices are then listed as affected.
         second = make_device('edge-2')
         response = self.client.post(url('event_edit', self.event.pk), {
             'title': self.event.title, 'event_type': self.event.event_type.pk, 'status': 'planned',
             'impact': 'none', 'start': timezone.localtime(self.event.start).strftime('%Y-%m-%d %H:%M:%S'),
-            'repeat': 'weekly', 'repeat_interval': 1, 'link_device_roles': [self.device.role.pk],
+            'repeat': 'weekly', 'repeat_interval': 1, 'add_target': '',
+            'include__dcim__devicerole': [self.device.role.pk],
         })
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.event.links.get().object, self.device.role)

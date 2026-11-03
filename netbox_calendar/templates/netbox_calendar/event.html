@@ -108,42 +108,54 @@
   <div class="col col-md-6">
     <div class="card">
       <h2 class="card-header d-flex justify-content-between align-items-center">
-        <span>{% trans "Linked Objects" %} <span class="badge text-bg-secondary">{{ objects_total }}</span></span>
+        {% trans "Objects" %}
         {% if can_edit %}
           <a href="{% url 'plugins:netbox_calendar:event_link' pk=object.pk %}" class="btn btn-sm btn-primary">
             <i class="mdi mdi-link-variant-plus"></i> {% trans "Link Objects" %}
           </a>
         {% endif %}
       </h2>
+      {# One row per kind: kinds AND together, objects within a kind OR together; excluded rows take objects out. #}
       <table class="table table-hover">
-        {% for link in object.links.all %}
+        {% for group in target_groups %}
           <tr>
-            <td class="text-secondary small">{{ link.object_type.name|bettertitle }}</td>
-            <td>{% if link.object %}{{ link.object|linkify }}{% else %}<s>{{ link.object_repr }}</s> <span class="small text-secondary">({% trans "deleted" %})</span>{% endif %}</td>
-            <td class="text-end">
-              {% if can_edit %}
-                {# Opens a confirmation page; nothing is removed until it is confirmed. #}
-                <a href="{% url 'plugins:netbox_calendar:event_unlink' pk=object.pk link_pk=link.pk %}" class="btn btn-sm btn-outline-danger" title="{% trans 'Unlink' %}"><i class="mdi mdi-link-variant-off"></i></a>
-              {% endif %}
+            <td class="text-secondary small text-nowrap">
+              {% if group.exclude %}<i class="mdi mdi-minus-circle-outline text-danger" title="{% trans 'Excluded' %}"></i>{% endif %}
+              {{ group.name }}
+              {% if group.criterion and group.links|length > 1 %}<div class="small">{% trans "any of" %}</div>{% endif %}
+            </td>
+            <td>
+              {% for link in group.links %}
+                <span class="text-nowrap me-2">
+                  {% if link.object %}{{ link.object|linkify }}{% else %}<s>{{ link.object_repr }}</s> <span class="small text-secondary">({% trans "deleted" %})</span>{% endif %}
+                  {% if can_edit %}
+                    {# Opens a confirmation page; nothing is removed until it is confirmed. #}
+                    <a href="{% url 'plugins:netbox_calendar:event_unlink' pk=object.pk link_pk=link.pk %}" class="text-danger" title="{% trans 'Unlink' %}"><i class="mdi mdi-close-circle-outline"></i></a>
+                  {% endif %}
+                </span>
+              {% endfor %}
             </td>
           </tr>
         {% endfor %}
         {% if object.filter_object_type %}
           <tr>
             <td class="text-secondary small">{% trans "Filter" %}</td>
-            <td colspan="2">
+            <td>
               {{ object.filter_object_type.name|bettertitle }}: <span class="font-monospace">{{ object.filter_query }}</span>
               <div class="small text-secondary">{% blocktrans count count=filter_count %}{{ count }} object matches now{% plural %}{{ count }} objects match now{% endblocktrans %}</div>
             </td>
           </tr>
         {% endif %}
-        {% if not object.links.all and not object.filter_object_type %}
+        {% if not target_groups and not object.filter_object_type %}
           <tr><td class="text-secondary">{% trans "No objects linked." %}</td></tr>
         {% endif %}
       </table>
+      {% if targets_text %}
+        <div class="card-footer small text-secondary">{{ targets_text }}</div>
+      {% endif %}
     </div>
     <div class="card">
-      {# Every device the event concerns: linked ones and those of linked sites, roles, types and so on. #}
+      {# Every device the event concerns: those meeting all its criteria, those picked one by one, less excluded ones. #}
       <h2 class="card-header">
         {% trans "Affected Devices" %} <span class="badge text-bg-secondary">{{ devices_total }}</span>
       </h2>

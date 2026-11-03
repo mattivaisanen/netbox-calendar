@@ -109,7 +109,10 @@ Available in body templates as `{{ data.<field> }}` and in conditions:
 | `recurrence` | `Every month on the 1st Wednesday`, or empty |
 | `reminder_minutes` | `120` for a reminder two hours ahead, else `null` |
 | `link`, `url` | the event's full address (with `netbox_url`), and its path |
-| `objects` | `[{"type": "dcim.device", "id": 7, "name": "agg-3", "link": "..."}]` |
+| `objects_text` | what the event concerns, in words: `Device role: Access, and Location: Floor 2. Except: Location: Lab` |
+| `objects` | included objects: `[{"type": "dcim.device", "id": 7, "name": "agg-3", "link": "..."}]` |
+| `excluded` | excluded objects, each like `objects` |
+| `devices` | affected devices (at most 50), each like `objects` |
 | `owner`, `by` | `{"id": 3, "username": "...", "name": "...", "email": "..."}`; `by` is who made the change, `null` for notices from the worker |
 | `people` | `[{"role": "Technical contact", "name": "...", "email": "..."}]` |
 | `recipients` | users to tell, each like `owner` |
@@ -137,8 +140,8 @@ It is also the body of direct e-mail. The default:
 ```
 
 Variables: `notice` (*Event reminder*), `title`, `event_type`, `status`,
-`impact` (empty for none), `start`, `end`, `when`, `objects` (comma
-separated), `owner`, `by`, `link` and `comment` (the description). The
+`impact` (empty for none), `start`, `end`, `when`, `objects` (the
+objects in words, as `objects_text`), `owner`, `by`, `link` and `comment` (the description). The
 settings page refuses a template that does not render; one that fails
 later falls back to the default.
 

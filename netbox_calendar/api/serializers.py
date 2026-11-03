@@ -9,6 +9,7 @@ from tenancy.api.serializers import ContactSerializer
 from users.api.serializers import GroupSerializer, UserSerializer
 
 from ..choices import EventStatusChoices, ImpactChoices, NoticeChoices
+from ..lookup import EXCLUDABLE
 from ..models import Event, EventObject, EventPerson, EventRole, EventType
 
 
@@ -61,7 +62,7 @@ class EventSerializer(NetBoxModelSerializer):
     def get_links(self, obj):
         return [
             {'id': link.pk, 'object_type': f'{link.object_type.app_label}.{link.object_type.model}',
-             'object_id': link.object_id, 'object': link.object_repr}
+             'object_id': link.object_id, 'object': link.object_repr, 'exclude': link.exclude}
             for link in obj.links.all()
         ]
 
@@ -74,10 +75,10 @@ class EventObjectSerializer(ChangeLogMessageSerializer, ValidatedModelSerializer
 
     class Meta:
         model = EventObject
-        fields = ('id', 'url', 'display', 'event', 'object_type', 'object_id', 'object', 'object_repr', 'created',
-                  'last_updated')
+        fields = ('id', 'url', 'display', 'event', 'object_type', 'object_id', 'object', 'object_repr', 'exclude',
+                  'created', 'last_updated')
         read_only_fields = ('object_repr',)
-        brief_fields = ('id', 'url', 'display', 'event', 'object_type', 'object_id')
+        brief_fields = ('id', 'url', 'display', 'event', 'object_type', 'object_id', 'exclude')
 
     def validate(self, data):
         content_type = data.get('object_type') or getattr(self.instance, 'object_type', None)
@@ -86,6 +87,9 @@ class EventObjectSerializer(ChangeLogMessageSerializer, ValidatedModelSerializer
             model = ContentType.objects.get_for_id(content_type.pk).model_class()
             if model is None or not model.objects.filter(pk=object_id).exists():
                 raise serializers.ValidationError({'object_id': 'No such object.'})
+            exclude = data.get('exclude', getattr(self.instance, 'exclude', False))
+            if exclude and f'{content_type.app_label}.{content_type.model}' not in EXCLUDABLE:
+                raise serializers.ValidationError({'exclude': 'Objects of this type cannot be excluded.'})
         return super().validate(data)
 
 

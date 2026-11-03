@@ -17,7 +17,7 @@ from django.utils import timezone
 from netbox.plugins import PluginTemplateExtension
 
 from . import agenda
-from .forms import link_field_for, linkable_types
+from .forms import linkable_types, target_field, type_label
 from .lookup import events_for_object
 from .models import Event
 from .plugin_settings import on
@@ -40,17 +40,13 @@ def _linkable(model):
 
 
 def pick_param(content_type):
-    """The add-event form's field for objects of this type: its own picker, or "Other objects"."""
-    return link_field_for(content_type) or 'link_objects'
+    """The add-event form's picker for included objects of this type."""
+    return target_field(type_label(content_type))
 
 
 def schedule_url(content_type, pks):
     """The add-event form with these objects ready to link."""
-    param = pick_param(content_type)
-    query = [f'{param}={pk}' for pk in pks]
-    if param == 'link_objects':
-        query.insert(0, f'link_type={content_type.pk}')
-    query = '&'.join(query)
+    query = '&'.join(f'{pick_param(content_type)}={pk}' for pk in pks)
     return f"{reverse('plugins:netbox_calendar:event_add')}?{query}"
 
 
