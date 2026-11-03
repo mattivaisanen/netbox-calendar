@@ -794,8 +794,8 @@ class EventForm(ReminderFieldsMixin, TargetFieldsMixin, NetBoxModelForm):
         }.get(repeat, ('rrule',) if repeat == recurrence.WEEKLY else ('rrule', 'repeat_weekdays'))
         for name in unused:
             self.fields.pop(name, None)
-        if 'repeat_until' not in self.fields:
-            self.fields.pop('repeat_end_by')
+        # repeat_end_by stays: hidden fields are drawn outside the When section, so
+        # one dropped here would be missing once a repeat is picked and the section redrawn.
         if repeat == recurrence.NONE:
             self.fields.pop('repeat_next')
         else:

@@ -80,7 +80,8 @@ set up once per page; it runs again after HTMX swaps part of a form.
         button.nbcalTab = true;
         button.addEventListener('shown.bs.tab', function () {
           choice.value = tabs[fieldId];
-          choice.dispatchEvent(new Event('change', {bubbles: true}));
+          // The hidden value sits outside the section; tell the section from the tab's pane.
+          pane.dispatchEvent(new Event('change', {bubbles: true}));
         });
       }
       if (!choice.value && pane.classList.contains('active')) {
