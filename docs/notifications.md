@@ -133,7 +133,8 @@ Available in body templates as `{{ data.<field> }}` and in conditions:
 
 `message` is made from a Jinja2 template, changed on Calendar → Settings
 (**Notification message**) or with the `message` key in `configuration.py`.
-It is also the body of direct e-mail. The default:
+Direct e-mail has its own templates, see
+[below](#e-mail-subject-and-body). The default:
 
 ```jinja
 {{ notice }}: {{ title }}
@@ -169,10 +170,48 @@ E-mail goes out through NetBox's own `EMAIL` setting in
    you@corp.internal` sends a test message.
 2. Turn on **Direct e-mail** (Calendar → Settings, or `direct_email` in
    `configuration.py`).
-3. Turn on **Send e-mail** on the event types that should e-mail.
+3. Turn on **Send e-mail** on each event type that should e-mail
+   (Calendar → Event types → edit). It is off by default, and without it
+   no e-mail is sent for that type, even with direct e-mail on.
 
-Each notice is one e-mail to all its recipients, with the message as the
-body and the event attached as `event.ics`. Outlook and most mail
+Recipients are the same people as for the bell, plus contacts. A user or
+contact without an e-mail address is skipped. A failed send is logged as
+an error by the `netbox_calendar.notifications` logger; reminders, starts
+and ends are sent by the background worker, so check its log too.
+
+Each notice is one e-mail to all its recipients, with the event attached
+as `event.ics`. Outlook and most mail
 programs show it as a meeting invite that can be added to the calendar;
 a cancelled event arrives as a cancellation that removes it. The event's
 owner is the organizer.
+
+### E-mail subject and body
+
+Subject and body are Jinja2 templates of their own, separate from the
+webhook message: **E-mail subject** and **E-mail body** on Calendar →
+Settings, or `email_subject` and `email_body` in `configuration.py`. They
+get the same variables as [the message](#the-message). The subject is
+joined to one line. Defaults:
+
+```jinja
+{{ notice }}: {{ title }} ({{ when }})
+```
+
+```jinja
+{{ notice }}: {{ title }}
+
+When: {{ when }}
+Type: {{ event_type }}
+Status: {{ status }}
+{% if impact %}Impact: {{ impact }}
+{% endif %}{% if objects %}Concerns: {{ objects }}
+{% endif %}{% if owner %}Owner: {{ owner }}
+{% endif %}{% if by %}By: {{ by }}
+{% endif %}{% if occurrence %}
+{{ occurrence }}
+{% endif %}{% if reason %}Reason: {{ reason }}
+{% endif %}{% if comment %}
+{{ comment }}
+{% endif %}
+{{ link }}
+```

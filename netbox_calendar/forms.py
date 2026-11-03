@@ -922,7 +922,10 @@ class SettingsForm(forms.Form):
             elif setting.kind == plugin_settings.KIND_TEMPLATE:
                 field = forms.CharField(
                     required=False, strip=False, validators=[_valid_template],
-                    widget=forms.Textarea(attrs={'rows': 8, 'class': 'font-monospace'}),
+                    # A subject is one line; a message gets room.
+                    widget=forms.Textarea(attrs={
+                        'rows': 2 if setting.key == 'email_subject' else 8, 'class': 'font-monospace',
+                    }),
                 )
             else:
                 field = forms.CharField(required=False)

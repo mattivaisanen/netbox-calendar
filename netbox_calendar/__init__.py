@@ -55,8 +55,12 @@ class NetBoxCalendarConfig(PluginConfig):
         # First day of the week in the month view: 0 Monday ... 6 Sunday.
         'first_weekday': 0,
         # Template (Jinja2) of the notification text, {{ data.message }} for
-        # webhooks and the body of direct e-mail. See message_template.py.
+        # webhooks. See message_template.py.
         'message': message_template.DEFAULT,
+        # Templates (Jinja2) of the subject and body of direct e-mail. Same
+        # variables as `message`.
+        'email_subject': message_template.EMAIL_SUBJECT,
+        'email_body': message_template.EMAIL_BODY,
         # A reminder or start notice the background job missed (worker
         # stopped, say) is still sent this many minutes late, never later.
         'reminder_grace_minutes': 60,

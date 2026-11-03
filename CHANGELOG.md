@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Direct e-mail has its own **E-mail subject** and **E-mail body**
+  templates (Calendar → Settings, `email_subject` and `email_body`),
+  separate from the webhook message. **The e-mail body no longer uses the
+  Notification message**; copy it to E-mail body to keep the old text.
+- Docs and help texts say plainly that each event type needs **Send
+  e-mail** on, as well as Direct e-mail.
 - Fixed: skipping, moving or bringing back an occurrence failed with
   `NameError: name '_' is not defined`.
 - **Edit** on an occurrence replaces **Skip**: skip it, move it to another
