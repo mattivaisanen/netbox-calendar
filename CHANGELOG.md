@@ -12,6 +12,8 @@
 - REST API: `occurrence-changes/` endpoint. **The event's `skipped` field
   is replaced by `occurrence_changes`**; existing skipped occurrences are
   kept with the reason "Skipped before reasons were recorded."
+- Fixed: the Event Rules list failed to load (TypeError) when a rule
+  used a calendar notice as a trigger.
 - The calendar's notices (Event scheduled, Event reminder, ...) are now
   listed as Event Rule triggers. They were registered too late for
   NetBox's form to see them.
