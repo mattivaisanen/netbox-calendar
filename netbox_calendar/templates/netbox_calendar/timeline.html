@@ -32,8 +32,9 @@
       {% for entry in entries %}
         <a href="{{ entry.url }}" class="list-group-item list-group-item-action{% if entry.is_cancelled %} opacity-50{% endif %}">
           <div class="row align-items-center">
-            <div class="col-auto">
-              <span class="badge" style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};">
+            {# Fixed-width type column so titles line up whatever the type name length #}
+            <div class="col-2">
+              <span class="badge d-inline-block mw-100 text-truncate" title="{{ entry.type_name }}" style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};">
                 {% if entry.icon %}<i class="mdi mdi-{{ entry.icon }}"></i> {% endif %}{{ entry.type_name }}
               </span>
             </div>
