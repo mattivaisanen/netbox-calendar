@@ -5,8 +5,10 @@ Everything is under **Calendar** in the NetBox menu.
 ## Views
 
 - **Month** (Calendar → Month): a month grid of colored events, past ones
-  grayed out and cancelled ones struck through. Click a day's **+** to add an
-  event on it.
+  grayed out and cancelled ones struck through. An event lasting several days
+  is one bar across them, with its title once per week; a bar going on into
+  the next week has a flat end and starts that week's row again. Click a
+  day's **+** to add an event on it.
 - **Timeline** (Calendar → Timeline): running and upcoming events in date
   order, grouped by day, with impact and linked objects. **Show past**
   looks back instead; **Further ahead** and **Further back** widen the

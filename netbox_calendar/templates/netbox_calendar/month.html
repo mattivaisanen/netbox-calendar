@@ -9,13 +9,32 @@
 
 {% block content %}
 <style>
-  .nbcal-month { table-layout: fixed; }
-  .nbcal-month td { height: 7.5rem; vertical-align: top; padding: .25rem; }
-  .nbcal-month td.nbcal-other { background-color: var(--tblr-bg-surface-secondary); }
-  .nbcal-month td.nbcal-today { box-shadow: inset 0 0 0 2px var(--tblr-primary); }
+  /*
+   * Each week is a 7-column grid. Day cells span every row of the week and
+   * draw the borders; the day number sits in row 1 and the event bars in
+   * the rows after it, one row per lane, so a bar can span several days.
+   */
+  .nbcal-month { min-width: 49rem; }
+  .nbcal-names, .nbcal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .nbcal-names > div { text-align: center; font-weight: 600; padding: .5rem; border-bottom: 1px solid var(--tblr-border-color); }
+  .nbcal-names > div + div { border-left: 1px solid var(--tblr-border-color); }
+  .nbcal-week { min-height: 7.5rem; border-bottom: 1px solid var(--tblr-border-color); }
+  .nbcal-week:last-child { border-bottom: 0; }
+  .nbcal-cell { grid-row: 1 / -1; border-left: 1px solid var(--tblr-border-color); }
+  .nbcal-cell.nbcal-first { border-left: 0; }
+  .nbcal-cell.nbcal-other { background-color: var(--tblr-bg-surface-secondary); }
+  /* Today's outline is drawn above the bars, so a bar over today doesn't hide it. */
+  .nbcal-cell.nbcal-today { position: relative; }
+  .nbcal-cell.nbcal-today::after { content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+                                   box-shadow: inset 0 0 0 2px var(--tblr-primary); }
+  .nbcal-head { grid-row: 1; padding: .25rem .25rem .1rem; }
   .nbcal-day { font-size: .8rem; font-weight: 600; }
-  .nbcal-entry { font-size: .75rem; border-radius: .25rem; padding: 0 .3rem; margin-bottom: 2px; text-decoration: none; }
+  .nbcal-entry { position: relative; z-index: 1; display: block; font-size: .75rem; border-radius: .25rem;
+                 padding: 0 .3rem; margin: 0 .25rem 2px; text-decoration: none; }
   .nbcal-entry:hover { filter: brightness(.92); }
+  /* A bar that goes on into the week before / after: flat, to the cell edge. */
+  .nbcal-entry.nbcal-cont-before { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .nbcal-entry.nbcal-cont-after { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
   /* Past events: grayed out (color drained, faded), clearer on hover. */
   .nbcal-entry.nbcal-past { opacity: .5; filter: grayscale(.85); }
   .nbcal-entry.nbcal-past:hover { opacity: .8; filter: grayscale(.4); }
@@ -37,31 +56,28 @@
     </a>
   </div>
   <div class="table-responsive">
-    <table class="table table-bordered nbcal-month mb-0">
-      <thead>
-        <tr>{% for name in weekday_names %}<th class="text-center">{{ name }}</th>{% endfor %}</tr>
-      </thead>
-      <tbody>
-        {% for week in weeks %}
-          <tr>
-            {% for day in week %}
-              <td class="{% if not day.in_month %}nbcal-other{% endif %}{% if day.is_today %} nbcal-today{% endif %}">
-                <div class="d-flex justify-content-between">
-                  <span class="nbcal-day{% if not day.in_month %} text-secondary{% endif %}">{{ day.date|date:"j" }}</span>
-                  {% if perms.netbox_calendar.add_event %}
-                    <a class="text-secondary small" href="{% url 'plugins:netbox_calendar:event_add' %}?start={{ day.date|date:'Y-m-d' }} 09:00:00"
-                       title="{% trans 'Add an event on this day' %}"><i class="mdi mdi-plus"></i></a>
-                  {% endif %}
-                </div>
-                {% for entry in day.entries %}
-                  {% include 'netbox_calendar/inc/entry.html' %}
-                {% endfor %}
-              </td>
-            {% endfor %}
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="nbcal-month">
+      <div class="nbcal-names">{% for name in weekday_names %}<div>{{ name }}</div>{% endfor %}</div>
+      {% for week in weeks %}
+        {# Rows: day numbers, one per lane of bars, then the rest of the cell. #}
+        <div class="nbcal-week" style="grid-template-rows: auto{% if week.lanes %} repeat({{ week.lanes }}, auto){% endif %} 1fr;">
+          {% for day in week.days %}
+            <div class="nbcal-cell{% if forloop.first %} nbcal-first{% endif %}{% if not day.in_month %} nbcal-other{% endif %}{% if day.is_today %} nbcal-today{% endif %}"
+                 style="grid-column: {{ forloop.counter }};"></div>
+            <div class="nbcal-head d-flex justify-content-between" style="grid-column: {{ forloop.counter }};">
+              <span class="nbcal-day{% if not day.in_month %} text-secondary{% endif %}">{{ day.date|date:"j" }}</span>
+              {% if perms.netbox_calendar.add_event %}
+                <a class="text-secondary small" href="{% url 'plugins:netbox_calendar:event_add' %}?start={{ day.date|date:'Y-m-d' }} 09:00:00"
+                   title="{% trans 'Add an event on this day' %}"><i class="mdi mdi-plus"></i></a>
+              {% endif %}
+            </div>
+          {% endfor %}
+          {% for bar in week.bars %}
+            {% include 'netbox_calendar/inc/entry.html' %}
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
   </div>
 </div>
 {% endblock %}

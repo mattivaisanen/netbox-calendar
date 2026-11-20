@@ -3,6 +3,10 @@ What the month view, the timeline, the widget and the object card show:
 occurrences of events in a time range as Entry rows, laid out as a month
 grid (month_grid()) or grouped by day (by_day()).
 
+In the month grid an entry lasting several days is one bar across those
+days. A bar never crosses a week row: it ends at the week's last day and
+continues as a new bar (with its title again) on the next row.
+
 Scheduled change requests of netbox-change-approval are shown too, when
 that plugin is installed (integrations.py), as read-only entries.
 """
@@ -65,7 +69,29 @@ class Day:
     date: date
     in_month: bool
     is_today: bool
-    entries: list = field(default_factory=list)
+
+
+@dataclass
+class Bar:
+    """An entry's piece in one week row: columns `column` .. `column + span - 1` (1-based)."""
+    entry: Entry
+    column: int
+    span: int
+    lane: int = 0
+    continues_before: bool = False
+    continues_after: bool = False
+    starts_here: bool = True
+
+
+@dataclass
+class Week:
+    """One row of the month grid: its 7 Days and the bars laid over them in lanes."""
+    days: list
+    bars: list = field(default_factory=list)
+
+    @property
+    def lanes(self):
+        return max((bar.lane for bar in self.bars), default=0)
 
 
 def event_entries(queryset, after, before):
@@ -119,7 +145,10 @@ def local_midnight(day):
 
 
 def month_grid(year, month, all_entries, first_weekday=0):
-    """Weeks (lists of 7 Days) of the month, each Day with the entries on it."""
+    """
+    Weeks of the month. Each Week has its 7 Days and one Bar per entry
+    piece in that week, stacked in lanes so bars never overlap.
+    """
     first, last = month_bounds(year, month, first_weekday)
     today = timezone.localdate()
     days = {}
@@ -127,12 +156,46 @@ def month_grid(year, month, all_entries, first_weekday=0):
     while day <= last:
         days[day] = Day(day, day.month == month, day == today)
         day += timedelta(days=1)
-    for entry in all_entries:
-        for covered in entry.days():
-            if covered in days:
-                days[covered].entries.append(entry)
     ordered = list(days.values())
-    return [ordered[i:i + 7] for i in range(0, len(ordered), 7)]
+    weeks = [Week(ordered[i:i + 7]) for i in range(0, len(ordered), 7)]
+    for week in weeks:
+        week.bars = week_bars(week, all_entries)
+    return weeks
+
+
+def week_bars(week, all_entries):
+    """The entries' bars in one week, each given the lowest free lane (1-based)."""
+    week_first = week.days[0].date
+    week_last = week.days[-1].date
+    bars = []
+    for order, entry in enumerate(all_entries):
+        covered = entry.days()
+        first, last = covered[0], covered[-1]
+        if last < week_first or first > week_last:
+            continue
+        shown_first, shown_last = max(first, week_first), min(last, week_last)
+        bars.append((order, Bar(
+            entry=entry,
+            column=(shown_first - week_first).days + 1,
+            span=(shown_last - shown_first).days + 1,
+            continues_before=first < week_first,
+            continues_after=last > week_last,
+            starts_here=first >= week_first,
+        )))
+    # Longer bars first on a day (as calendar apps do), then the entries' own order.
+    bars.sort(key=lambda item: (item[1].column, -item[1].span, item[0]))
+    lane_ends = []  # lane_ends[n]: last column used in lane n + 1
+    for _order, bar in bars:
+        end = bar.column + bar.span - 1
+        for n, used_until in enumerate(lane_ends):
+            if used_until < bar.column:
+                lane_ends[n] = end
+                bar.lane = n + 1
+                break
+        else:
+            lane_ends.append(end)
+            bar.lane = len(lane_ends)
+    return [bar for _order, bar in bars]
 
 
 def by_day(all_entries, first_day=None):

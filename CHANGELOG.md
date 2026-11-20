@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Month view: an event lasting several days is one connected bar across
+  them, with its title once per week row. A bar going on into the next
+  week continues there with its title again.
 - **Calendar → Settings** has tabs: General, Notifications, iCal Feed,
   Outlook, Google and CalDAV. Each tab saves only its own settings, and
   shows how many of them are saved here.
