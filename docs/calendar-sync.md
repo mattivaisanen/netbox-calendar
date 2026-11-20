@@ -52,7 +52,12 @@ In the [Microsoft Entra admin center](https://entra.microsoft.com):
      for users of your organization only. This is the usual choice.
    - *Accounts in any organizational directory* (multitenant), when users
      from several tenants use the same NetBox.
+   - *Any organizational directory and personal Microsoft accounts*, when
+     users also sign in with Outlook.com accounts. Set `outlook_tenant` to
+     `'common'`.
 4. **Redirect URI:** platform **Web**, and the address from step 1.
+   Entra accepts plain `http://` only for `localhost`, for trying it out
+   on a local NetBox.
 5. Press **Register**. On the app's **Overview** page, copy the
    **Application (client) ID** and the **Directory (tenant) ID**.
 
@@ -177,6 +182,8 @@ time when daylight saving time starts or ends.
 | *Sign-in expired* | The refresh token stopped working. Causes: a password reset, a revoked session, a Conditional Access change, more than 90 days without a sync, or a changed NetBox `SECRET_KEY`. The user gets a bell notification and presses **Connect Again**. |
 | *AADSTS50011* during sign-in | The redirect URI doesn't match the app registration. Copy it again from **Calendar → Calendar Sync**. |
 | *AADSTS65001* or *Need admin approval* | Users may not consent to apps in your tenant. Grant admin consent (step 4). |
+| *MailboxNotEnabledForRESTAPI* | The account has no Exchange Online mailbox (no licence). Use an account with a mailbox. |
+| *AADSTS50020* or *AADSTS9002331* | The account type doesn't match: a personal account needs the app to allow personal accounts and `outlook_tenant` set to `'common'`. |
 | *AADSTS700016* | Wrong client ID, or the app is registered in another tenant than `outlook_tenant`. |
 | *AADSTS7000222* or *AADSTS7000215* | The client secret expired or is wrong. Add a new one (step 3) and restart NetBox and its worker. |
 | *ErrorAccessDenied* | The `Calendars.ReadWrite` permission is missing. |
