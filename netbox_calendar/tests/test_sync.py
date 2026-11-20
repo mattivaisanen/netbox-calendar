@@ -2,6 +2,7 @@
 from datetime import timedelta
 from unittest import mock
 
+from django.conf import settings
 from django.test import TestCase, override_settings
 
 from ..models import CalendarConnection, OccurrenceChange
@@ -9,9 +10,14 @@ from ..sync import engine, tokens
 from ..sync.outlook import OutlookProvider, graph_recurrence
 from .utils import make_event, make_user
 
-PLUGIN_CONFIG = {'netbox_calendar': {
-    'outlook_sync': True, 'outlook_client_id': 'client', 'outlook_client_secret': 'secret',
-}}
+# The real plugin config with sync turned on; other plugins keep theirs.
+PLUGIN_CONFIG = {
+    **settings.PLUGINS_CONFIG,
+    'netbox_calendar': {
+        **settings.PLUGINS_CONFIG.get('netbox_calendar', {}),
+        'outlook_sync': True, 'outlook_client_id': 'client', 'outlook_client_secret': 'secret',
+    },
+}
 
 
 class FakeGraph:
