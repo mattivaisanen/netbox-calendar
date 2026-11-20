@@ -1,9 +1,16 @@
 {% load helpers %}
-{# One event occurrence or change request on the month grid, as a colored pill. #}
-<a href="{{ entry.url }}" class="nbcal-entry d-block text-truncate{% if entry.is_cancelled %} text-decoration-line-through opacity-50{% endif %}{% if entry.is_past %} nbcal-past{% endif %}"
-   style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};"
+{% comment %}
+One bar on the month grid: an entry's piece in one week row. It spans the
+days it covers in that week; flat ends show it continues in the week before
+or after, where it is drawn again with its title.
+{% endcomment %}
+{% with entry=bar.entry %}
+<a href="{{ entry.url }}" class="nbcal-entry text-truncate{% if bar.continues_before %} nbcal-cont-before{% endif %}{% if bar.continues_after %} nbcal-cont-after{% endif %}{% if entry.is_cancelled %} text-decoration-line-through opacity-50{% endif %}{% if entry.is_past %} nbcal-past{% endif %}"
+   style="grid-column: {{ bar.column }} / span {{ bar.span }}; grid-row: {{ bar.lane|add:1 }}; background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};"
    title="{{ entry.type_name }}: {{ entry.title }}{% if entry.status_label %} ({{ entry.status_label }}){% endif %}">
+  {% if bar.continues_before %}<i class="mdi mdi-chevron-left"></i>{% endif %}
   {% if entry.icon %}<i class="mdi mdi-{{ entry.icon }}"></i>{% endif %}
-  {% if not entry.all_day %}<span class="fw-bold">{{ entry.start|date:"H:i" }}</span>{% endif %}
+  {% if bar.starts_here and not entry.all_day %}<span class="fw-bold">{{ entry.start|date:"H:i" }}</span>{% endif %}
   {{ entry.title }}
 </a>
+{% endwith %}
