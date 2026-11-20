@@ -8,7 +8,7 @@ from netbox.filtersets import NetBoxModelFilterSet
 from users.models import Group
 
 from .choices import EventStatusChoices, ImpactChoices
-from .models import Event, EventRole, EventType, involving
+from .models import Event, EventRole, EventType, ended_ids, involving
 
 User = get_user_model()
 
@@ -53,6 +53,7 @@ class EventFilterSet(NetBoxModelFilterSet):
     )
     mine = django_filters.BooleanFilter(method='filter_mine', label=_('Owned by or including me'))
     recurring = django_filters.BooleanFilter(method='filter_recurring', label=_('Repeating'))
+    past = django_filters.BooleanFilter(method='filter_past', label=_('Past (over, nothing left to come)'))
     # A repeating event counts while its series may still run.
     after = django_filters.IsoDateTimeFilter(method='filter_after', label=_('Ends after'))
     before = django_filters.IsoDateTimeFilter(method='filter_before', label=_('Starts before'))
@@ -82,6 +83,12 @@ class EventFilterSet(NetBoxModelFilterSet):
         if value is None:
             return queryset
         return queryset.exclude(rrule='') if value else queryset.filter(rrule='')
+
+    def filter_past(self, queryset, name, value):
+        if value is None:
+            return queryset
+        ended = ended_ids(queryset)
+        return queryset.filter(pk__in=ended) if value else queryset.exclude(pk__in=ended)
 
     def filter_after(self, queryset, name, value):
         return queryset.filter(Q(end__gt=value) | ~Q(rrule=''))

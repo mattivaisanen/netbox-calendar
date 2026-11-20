@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The events list shows upcoming and running events. Past events have
+  their own grayed-out **Past events** section below, newest first, with
+  **Open as list** for bulk actions. New **Past** filter (`past=true` /
+  `past=false`), also in the API.
+- Month view: past events are grayed out instead of slightly faded.
 - The event form's objects are rows: *Include* or *Exclude*, a type and
   its objects, with a button to remove each row and **Add** for another.
   Adding or changing a row no longer redraws the form. **Result** under

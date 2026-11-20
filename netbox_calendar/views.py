@@ -26,7 +26,7 @@ from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
 from . import agenda, filtersets, forms, ical, plugin_settings, recurrence, tables
 from .lookup import DEVICE_MATCHES, Targets, affected_devices, affected_vms, describe, filtered_objects
-from .models import Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting
+from .models import Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting, ended_ids
 from .permissions import can_edit, editable
 
 
@@ -144,10 +144,45 @@ EVENT_QUERYSET = Event.objects.select_related('event_type', 'event_owner').prefe
 
 @register_model_view(Event, 'list', path='', detail=False)
 class EventListView(generic.ObjectListView):
+    """
+    The events list. Without a `past` filter it lists upcoming and running
+    events, and past ones load into their own dimmed section below (the
+    same list with past=true&embedded=true, fetched by HTMX). Exports
+    always cover every event matching the filters.
+    """
     queryset = EVENT_QUERYSET
     filterset = filtersets.EventFilterSet
     filterset_form = forms.EventFilterForm
     table = tables.EventTable
+    template_name = 'netbox_calendar/event_list.html'
+
+    def get(self, request):
+        # Permission-restricted here, but not yet filtered: kept to count the past section.
+        self.unfiltered = self.queryset
+        self.split_past = 'past' not in request.GET and 'export' not in request.GET
+        if self.split_past:
+            self.queryset = self.queryset.exclude(pk__in=ended_ids(self.queryset))
+        elif request.GET.get('past') == 'true':
+            # Past events newest first, unless the user sorts the table.
+            self.queryset = self.queryset.order_by('-start', '-pk')
+        return super().get(request)
+
+    def get_extra_context(self, request):
+        if not self.split_past:
+            return {'split_past': False}
+        params = request.GET.copy()
+        for key in ('page', 'sort'):
+            params.pop(key, None)
+        params['past'] = 'true'
+        past_count = self.filterset(params, self.unfiltered, request=request).qs.count()
+        list_query = params.urlencode()
+        params['embedded'] = 'true'
+        return {
+            'split_past': True,
+            'past_count': past_count,
+            'past_list_query': list_query,
+            'past_table_query': params.urlencode(),
+        }
 
 
 def _same_targets(event, other, devices, vms):
