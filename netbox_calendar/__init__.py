@@ -13,7 +13,7 @@ class NetBoxCalendarConfig(PluginConfig):
     verbose_name = 'Calendar'
     description = (
         'Schedule upgrades, downtime, maintenance and other events on NetBox objects, '
-        'with calendar views, reminders, an iCal feed and Outlook sync.'
+        'with calendar views, reminders, an iCal feed and Outlook, Google and CalDAV sync.'
     )
     version = '0.1.1'
     author = 'Matti'
@@ -22,8 +22,8 @@ class NetBoxCalendarConfig(PluginConfig):
     min_version = '4.7.0'
 
     # Every key can also be changed on Calendar -> Settings (superusers),
-    # except reminder_grace_minutes and the outlook_* keys marked
-    # "configuration.py only". See plugin_settings.py.
+    # except reminder_grace_minutes and the keys marked "configuration.py
+    # only". See plugin_settings.py.
     default_settings = {
         # NetBox's address as users reach it (e.g. 'https://netbox.example.com'),
         # for full links in notifications, e-mails and the iCal feed. Empty:
@@ -80,7 +80,17 @@ class NetBoxCalendarConfig(PluginConfig):
         # National clouds only; configuration.py only.
         'outlook_login_url': 'https://login.microsoftonline.com',
         'outlook_graph_url': 'https://graph.microsoft.com/v1.0',
-        # Name of the calendar NetBox creates in each user's mailbox.
+        # Google Calendar: users connect their Google account. Client ID and
+        # secret of a Google Cloud OAuth client (the secret configuration.py only).
+        'google_sync': False,
+        'google_client_id': '',
+        'google_client_secret': '',
+        # CalDAV (Nextcloud, Fastmail, iCloud, ...): users connect with an app
+        # password. caldav_server fixes the server address for everyone;
+        # empty lets users type one.
+        'caldav_sync': False,
+        'caldav_server': '',
+        # Name of the calendar NetBox creates in each connected account.
         'sync_calendar_name': 'NetBox',
     }
 

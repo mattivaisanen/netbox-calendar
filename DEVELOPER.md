@@ -31,7 +31,7 @@ events repeat, how notices are sent or who may edit.
 | `notifications.py` | Recipients, the event data, and the three channels: bell, Event Rules, direct e-mail. |
 | `message_template.py` | The Jinja2 templates of the webhook message and the e-mail subject and body, rendered in a sandbox. |
 | `ical.py` | RFC 5545 output: feed, `.ics` download and e-mail invites, with a generated `VTIMEZONE`. |
-| `sync/` | Calendar sync: `engine.py` (which events go where, fingerprints, errors, jobs), `outlook.py` (Graph sign-in, tokens, event and recurrence mapping), `base.py` (the provider interface), `tokens.py` (token encryption). |
+| `sync/` | Calendar sync: `engine.py` (which events go where, fingerprints, errors, jobs), `outlook.py` (Graph sign-in, tokens, event and recurrence mapping), `google.py` (Calendar API), `caldav.py` (discovery, MKCALENDAR, `.ics` PUT), `base.py` (the provider interface, shared HTTP and event text), `tokens.py` (token encryption). |
 | `plugin_settings.py` | Settings superusers change in NetBox, layered over `configuration.py`. |
 | `integrations.py` | netbox-change-approval's scheduled change requests on the calendar. |
 | `template_content.py` | The Events card and running banner on object pages, the change freeze badge, and **Schedule Event** above object lists. |
@@ -149,8 +149,9 @@ the row outlives a deleted event until its outside copy is removed.
 
 - **Providers** (`sync/base.Provider`) sign the user in (authorization
   code with PKCE), keep tokens fresh, and `push()` / `remove()` one event.
-  `sync.PROVIDERS` lists them; adding Google or CalDAV means one more
-  class there.
+  `sync.PROVIDERS` lists them. `uses_oauth = False` providers (CalDAV)
+  take a server, user name and password through `connect_password()`
+  instead; the app password is kept in `refresh_token`, encrypted.
 - **The engine** (`sync/engine.py`) builds the wanted set per connection
   (`events_for()`), compares each `fingerprint()` with the stored one, and
   pushes or removes the difference. A cache lock keeps two workers off one
@@ -167,8 +168,18 @@ the row outlives a deleted event until its outside copy is removed.
   occurrence recreates the series (Graph's exception handling on a changed series is
   not reliable enough to patch); a change to the text patches it.
   `transactionId` stops duplicate creates when a job is retried.
-- `_http()` is the only method that touches the network; tests replace it
-  with a fake Graph (`tests/test_sync.py`).
+- **Google** (`sync/google.py`): the RRULE goes over as it is, skipped
+  occurrences as `EXDATE`s, moved ones as `PATCH`es of the instance
+  `<id>_<original start>`. NetBox picks the event id from the event and
+  its schedule, so a retry can't duplicate and a new schedule is a new id.
+- **CalDAV** (`sync/caldav.py`): `ical.calendar()` without `METHOD`, name
+  or attendees, `PUT` as `netbox-<pk>.ics`. Discovery follows RFC 6764
+  and RFC 4791 (`current-user-principal`, `calendar-home-set`,
+  `MKCALENDAR`); redirects are followed by hand so a `PROPFIND` stays a
+  `PROPFIND`. `own_calendar` says whether NetBox made the calendar (and
+  may delete it).
+- `_http()` (`_dav()` for CalDAV) is the only method that touches the
+  network; tests replace it (`tests/test_sync.py`).
 
 ## The targeting rule
 

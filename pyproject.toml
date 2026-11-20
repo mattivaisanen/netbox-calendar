@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "netbox-calendar"
 version = "0.1.1"
-description = "Schedule upgrades, downtime, maintenance and other events on NetBox objects, with calendar views, reminders, an iCal feed and Outlook sync."
+description = "Schedule upgrades, downtime, maintenance and other events on NetBox objects, with calendar views, reminders, an iCal feed and Outlook, Google and CalDAV sync."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]

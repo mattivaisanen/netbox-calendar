@@ -1,4 +1,4 @@
-"""Outlook sync against a fake Microsoft Graph: no network."""
+"""Calendar sync against fake services: no network."""
 from datetime import timedelta
 from unittest import mock
 
@@ -8,6 +8,8 @@ from django.utils import timezone
 
 from ..models import CalendarConnection, Event, OccurrenceChange
 from ..sync import engine, tokens
+from ..sync.caldav import CalDAVProvider
+from ..sync.google import GoogleProvider
 from ..sync.outlook import OutlookProvider, graph_recurrence
 from .utils import make_event, make_user
 
@@ -130,3 +132,72 @@ class OutlookSyncTests(TestCase):
             engine.sync_connection(self.connection)
         self.connection.refresh_from_db()
         self.assertEqual(self.connection.status, CalendarConnection.STATUS_EXPIRED)
+
+
+GOOGLE_CONFIG = {
+    **PLUGIN_CONFIG,
+    'netbox_calendar': {**PLUGIN_CONFIG['netbox_calendar'], 'google_sync': True, 'caldav_sync': True,
+                        'google_client_id': 'client', 'google_client_secret': 'secret'},
+}
+
+
+@override_settings(PLUGINS_CONFIG=GOOGLE_CONFIG, TIME_ZONE='Europe/Helsinki')
+class GoogleAndCalDAVTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user('owner', is_superuser=True)
+
+    def test_google_series_with_skipped_and_moved(self):
+        calls = []
+
+        def fake(method, url, **kwargs):
+            calls.append((method, url.split('/v3')[-1], kwargs.get('json')))
+            if url.endswith('/token'):
+                return 200, {'access_token': 'a', 'expires_in': 3600}, {}
+            if method == 'POST' and url.endswith('/calendars'):
+                return 200, {'id': 'cal1'}, {}
+            return 200, {}, {}
+
+        connection = CalendarConnection.objects.create(
+            user=self.user, provider='google', refresh_token=tokens.encrypt('refresh'),
+        )
+        event = make_event(self.user, rrule='FREQ=DAILY;COUNT=5')
+        OccurrenceChange.objects.create(event=event, original_start=event.start + timedelta(days=1), reason='Skip')
+        OccurrenceChange.objects.create(
+            event=event, original_start=event.start + timedelta(days=2), reason='Move',
+            start=event.start + timedelta(days=2, hours=3), end=event.start + timedelta(days=2, hours=4),
+        )
+        with mock.patch.object(GoogleProvider, '_http', side_effect=fake):
+            engine.sync_connection(connection)
+        (create,) = [body for method, path, body in calls if method == 'POST' and path.endswith('/events')]
+        self.assertEqual(create['recurrence'][0], 'RRULE:FREQ=DAILY;COUNT=5')
+        self.assertTrue(create['recurrence'][1].startswith('EXDATE:'))
+        (patch,) = [path for method, path, body in calls if method == 'PATCH']
+        self.assertIn(f"{create['id']}_", patch)
+
+    def test_caldav_connect_and_push(self):
+        requests_made = []
+
+        def fake(connection, method, url, body=None, headers=None, password=None):
+            requests_made.append((method, url))
+            if method == 'PROPFIND':
+                return 207, (
+                    '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response>'
+                    '<d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype>'
+                    '<c:calendar-home-set><d:href>/dav/calendars/owner/</d:href></c:calendar-home-set>'
+                    '</d:prop></d:propstat></d:response></d:multistatus>'
+                ), url
+            return 201, '', url
+
+        connection = CalendarConnection(user=self.user, provider='caldav')
+        provider = CalDAVProvider()
+        with mock.patch.object(CalDAVProvider, '_dav', side_effect=fake):
+            provider.connect_password(connection, 'https://cloud.example.com/dav/', 'owner', 'app-password')
+            connection.save()
+            self.assertTrue(connection.calendar_id.startswith('https://cloud.example.com/dav/calendars/owner/netbox-'))
+            make_event(self.user)
+            with mock.patch.object(CalDAVProvider, '_propfind', return_value={'calendar': True}):
+                engine.sync_connection(connection)
+        put = [url for method, url in requests_made if method == 'PUT']
+        self.assertEqual(len(put), 1)
+        self.assertEqual(tokens.decrypt(connection.refresh_token), 'app-password')

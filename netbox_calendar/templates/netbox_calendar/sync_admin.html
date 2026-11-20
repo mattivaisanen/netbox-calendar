@@ -28,6 +28,7 @@
                 {% for key in row.missing %}<code>{{ key }}</code>{% if not forloop.last %}, {% endif %}{% empty %}<span class="badge text-bg-green">{% trans "None" %}</span>{% endfor %}
               </td>
             </tr>
+            {% if row.redirect_uri %}
             <tr>
               <th scope="row">{% trans "Redirect URI" %}</th>
               <td>
@@ -37,9 +38,10 @@
                     <i class="mdi mdi-content-copy"></i>
                   </button>
                 </div>
-                <div class="small text-secondary mt-1">{% trans "Add exactly this address to the app registration, as a Web redirect URI. Set the NetBox address in Calendar → Settings so it doesn't depend on how you opened this page." %}</div>
+                <div class="small text-secondary mt-1">{% trans "Add exactly this address to the app registration (OAuth client) as a redirect URI. Set the NetBox address in Calendar → Settings so it doesn't depend on how you opened this page." %}</div>
               </td>
             </tr>
+            {% endif %}
           </table>
         </div>
       </div>
@@ -66,7 +68,7 @@
               <tr>
                 <td>{{ connection.user.get_full_name|default:connection.user.username }}</td>
                 <td>{{ connection.provider_label }}</td>
-                <td>{{ connection.account|default:"—" }}</td>
+                <td>{{ connection.account|default:"—" }}{% if connection.server %}<div class="small text-secondary text-break">{{ connection.server }}</div>{% endif %}</td>
                 <td>{{ connection.get_scope_display }}</td>
                 <td>
                   {% if connection.status == 'active' %}<span class="badge text-bg-green">{{ connection.get_status_display }}</span>

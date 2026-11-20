@@ -38,9 +38,10 @@ Outlook or any other calendar app.
 - Schedule one event for many objects at once from any object list.
 - Personal iCal feed for Outlook, Google Calendar and phones, and an `.ics`
   download per event.
-- Outlook sync: each user connects their own Outlook calendar and NetBox
+- Calendar sync: each user connects their own Outlook, Google Calendar or
+  CalDAV calendar (Nextcloud, Fastmail, iCloud and others), and NetBox
   keeps their events in it. It works when NetBox is only reachable inside
-  your network. It is off by default and needs an Entra app registration.
+  your network. Each service is off by default.
 - Change freeze windows, shown in the top bar to everyone while they run.
 - A warning when another event overlaps on the same object.
 - Skip or move single occurrences of a repeating event, always with a
@@ -113,7 +114,7 @@ See [docs/installation.md](docs/installation.md#uninstalling) for details.
 - [Using the calendar](docs/usage.md)
 - [Configuration](docs/configuration.md)
 - [Notifications, webhooks and e-mail](docs/notifications.md)
-- [Calendar sync with Outlook](docs/calendar-sync.md)
+- [Calendar sync: Outlook, Google Calendar, CalDAV](docs/calendar-sync.md)
 - [Developer notes](DEVELOPER.md)
 - [Changelog](CHANGELOG.md)
 

@@ -3,8 +3,15 @@ What every calendar provider has: signing in with OAuth, and pushing and
 removing one event. engine.py calls these; it never talks to a service
 directly.
 """
+import base64
 import hashlib
 import json
+
+import requests
+from django.conf import settings
+
+from ..ical import absolute_url
+from ..lookup import describe
 
 
 class SyncError(Exception):
@@ -24,13 +31,46 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def id_token_claims(id_token):
+    """
+    The claims of the ID token that came with the tokens. It came straight
+    from the provider's token endpoint over HTTPS, so its signature needn't be
+    checked to read the account name (OpenID Connect Core 3.1.3.7).
+    """
+    try:
+        part = id_token.split('.')[1]
+        return json.loads(base64.urlsafe_b64decode(part + '=' * (-len(part) % 4)))
+    except (IndexError, ValueError):
+        return {}
+
+
+def event_text(event):
+    """(location, description) every provider shows for an event: what it concerns, and the details."""
+    objects_text = describe(event)
+    link = absolute_url(event.get_absolute_url())
+    text = '\n\n'.join(part for part in (
+        event.description,
+        f'Concerns: {objects_text}' if objects_text else '',
+        f'Owner: {event.owner_name}' if event.event_owner_id else '',
+        f'Impact: {event.get_impact_display()}',
+        event.comments,
+        link,
+    ) if part)
+    return objects_text, text
+
+
 class Provider:
     #: Short name, stored on CalendarConnection.provider and used in URLs.
     name = ''
     #: Shown to users.
     label = ''
+    #: Shown on the card and buttons ("Connect Outlook Calendar").
+    title = ''
     #: Material Design icon name.
     icon = 'calendar-sync'
+    #: True: the user signs in on the provider's page (OAuth). False: the
+    #: user types a server, user name and password (connect_password()).
+    uses_oauth = True
 
     def is_enabled(self):
         """Turned on in the plugin settings."""
@@ -43,6 +83,24 @@ class Provider:
     def is_ready(self):
         return self.is_enabled() and not self.missing_settings()
 
+    #: Seconds to wait for the service before giving up on a request.
+    timeout = 20
+
+    def _http(self, method, url, **kwargs):
+        """
+        One request to the service: (status, parsed JSON or {}, headers).
+        Uses NetBox's HTTP_PROXIES. The only method that touches the
+        network; tests replace it.
+        """
+        response = requests.request(
+            method, url, timeout=self.timeout, proxies=getattr(settings, 'HTTP_PROXIES', None), **kwargs,
+        )
+        try:
+            body = response.json() if response.content else {}
+        except ValueError:
+            body = {}
+        return response.status_code, body, response.headers
+
     # Signing in (OAuth 2.0 authorization code flow with PKCE).
 
     def authorize_url(self, redirect_uri, state, challenge, login_hint=''):
@@ -51,6 +109,16 @@ class Provider:
 
     def finish(self, connection, code, redirect_uri, verifier):
         """Trade the code from the sign-in for tokens, stored on `connection` (not saved)."""
+        raise NotImplementedError
+
+    # Signing in with a password (CalDAV).
+
+    def fixed_server(self):
+        """A server address set by the admin, so users don't type one. Empty: users type it."""
+        return ''
+
+    def connect_password(self, connection, server, username, password):
+        """Check the login and store it on `connection` (not saved)."""
         raise NotImplementedError
 
     # Pushing.

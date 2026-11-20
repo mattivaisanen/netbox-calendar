@@ -16,17 +16,27 @@
     {% for card in sync_providers %}
       {% with provider=card.provider connection=card.connection %}
       <div class="card">
-        <h2 class="card-header"><i class="mdi mdi-{{ provider.icon }}"></i> {% blocktrans with name=provider.label %}{{ name }} Calendar{% endblocktrans %}</h2>
+        <h2 class="card-header"><i class="mdi mdi-{{ provider.icon }}"></i> {{ provider.title }}</h2>
         <div class="card-body">
           {% if not card.ready %}
             <p class="text-secondary mb-0">{% blocktrans with name=provider.label %}{{ name }} sync is turned on but not set up yet. Ask an admin to finish it on Calendar → Calendar Sync.{% endblocktrans %}</p>
           {% elif not connection %}
-            <p>{% blocktrans with name=provider.label %}Connect your {{ name }} calendar and NetBox puts your events in it, in a calendar of their own, and keeps them up to date. You sign in with your own account; NetBox only touches that calendar.{% endblocktrans %}</p>
-            <a href="{% url 'plugins:netbox_calendar:sync_connect' provider.name %}" class="btn btn-primary">
-              <i class="mdi mdi-link-variant"></i> {% blocktrans with name=provider.label %}Connect {{ name }} Calendar{% endblocktrans %}
-            </a>
+            {% if provider.uses_oauth %}
+              <p>{% blocktrans with name=provider.label %}Connect your {{ name }} account and NetBox puts your events in a calendar of their own there, and keeps them up to date. You sign in with your own account; NetBox only touches that calendar.{% endblocktrans %}</p>
+              <a href="{% url 'plugins:netbox_calendar:sync_connect' provider.name %}" class="btn btn-primary">
+                <i class="mdi mdi-link-variant"></i> {% blocktrans with name=provider.title %}Connect {{ name }}{% endblocktrans %}
+              </a>
+            {% else %}
+              {% include 'netbox_calendar/inc/sync_password_form.html' %}
+            {% endif %}
           {% else %}
             <table class="table table-sm attr-table mb-3">
+              {% if connection.server %}
+                <tr>
+                  <th scope="row">{% trans "Server" %}</th>
+                  <td class="text-break">{{ connection.server }}</td>
+                </tr>
+              {% endif %}
               <tr>
                 <th scope="row">{% trans "Account" %}</th>
                 <td>{{ connection.account|default:"—" }}</td>
@@ -56,9 +66,13 @@
             </table>
             {% if connection.status == 'expired' %}
               <div class="alert alert-warning">{% trans "NetBox can no longer sign in to this calendar. Connect again to carry on; nothing is lost." %}</div>
-              <a href="{% url 'plugins:netbox_calendar:sync_connect' provider.name %}" class="btn btn-primary mb-3">
-                <i class="mdi mdi-link-variant"></i> {% trans "Connect Again" %}
-              </a>
+              {% if provider.uses_oauth %}
+                <a href="{% url 'plugins:netbox_calendar:sync_connect' provider.name %}" class="btn btn-primary mb-3">
+                  <i class="mdi mdi-link-variant"></i> {% trans "Connect Again" %}
+                </a>
+              {% else %}
+                <div class="mb-3">{% include 'netbox_calendar/inc/sync_password_form.html' %}</div>
+              {% endif %}
             {% endif %}
             <form method="post" action="{% url 'plugins:netbox_calendar:sync_connection' connection.pk %}" class="d-flex flex-wrap align-items-center gap-2 mb-3">
               {% csrf_token %}
@@ -82,7 +96,7 @@
                 <button type="submit" name="action" value="disconnect" class="btn btn-outline-danger"><i class="mdi mdi-link-variant-off"></i> {% trans "Disconnect" %}</button>
                 <div class="form-check mb-0">
                   <input class="form-check-input" type="checkbox" name="remove_calendar" id="sync-remove-{{ connection.pk }}" checked>
-                  <label class="form-check-label" for="sync-remove-{{ connection.pk }}">{% blocktrans with name=provider.label %}Also delete the NetBox calendar from {{ name }}{% endblocktrans %}</label>
+                  <label class="form-check-label" for="sync-remove-{{ connection.pk }}">{% if connection.own_calendar %}{% blocktrans with name=provider.label %}Also delete the NetBox calendar from {{ name }}{% endblocktrans %}{% else %}{% trans "Also delete NetBox's events from the calendar" %}{% endif %}</label>
                 </div>
               </form>
             </div>

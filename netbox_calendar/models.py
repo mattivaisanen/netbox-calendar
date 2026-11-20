@@ -582,10 +582,14 @@ class CalendarConnection(models.Model):
     provider = models.CharField(verbose_name=_('provider'), max_length=30)
     # The outside account, such as the mailbox address, for showing.
     account = models.CharField(verbose_name=_('account'), max_length=255, blank=True)
-    # The calendar in that account that holds NetBox's events.
+    # The calendar in that account that holds NetBox's events, and whether
+    # NetBox made it (and may delete it on disconnect).
     calendar_id = models.CharField(max_length=500, blank=True)
+    own_calendar = models.BooleanField(default=True)
+    # The server address, for providers the user names one for (CalDAV).
+    server = models.CharField(verbose_name=_('server'), max_length=500, blank=True)
     scope = models.CharField(verbose_name=_('events'), max_length=10, choices=SCOPE_CHOICES, default=SCOPE_MINE)
-    # Encrypted (sync/tokens.py).
+    # Encrypted (sync/tokens.py). For CalDAV, refresh_token is the app password.
     refresh_token = models.TextField(blank=True)
     access_token = models.TextField(blank=True)
     access_expires = models.DateTimeField(blank=True, null=True)

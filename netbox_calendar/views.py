@@ -895,13 +895,17 @@ def _back(request, default='plugins:netbox_calendar:my_feed'):
 
 
 class SyncConnectView(ConditionalLoginRequiredMixin, View):
-    """Sends the browser to the provider's sign-in, with a one-time state and a PKCE challenge."""
+    """
+    Connecting a calendar. GET (OAuth providers): send the browser to the
+    provider's sign-in, with a one-time state and a PKCE challenge. POST
+    (CalDAV): check the server, user name and password.
+    """
 
     def get(self, request, provider):
         if not request.user.is_authenticated:
             return redirect(f"{reverse('login')}?next={request.path}")
         provider = _provider_or_404(provider)
-        if not provider.is_ready():
+        if not provider.is_ready() or not provider.uses_oauth:
             messages.error(request, _('{provider} sync is not set up yet. Ask an admin.').format(
                 provider=provider.label,
             ))
@@ -915,6 +919,38 @@ class SyncConnectView(ConditionalLoginRequiredMixin, View):
         ))
 
 
+    def post(self, request, provider):
+        """Providers that take a server, user name and password (CalDAV): check them and connect."""
+        from .sync import engine
+        from .sync.base import SyncError
+
+        if not request.user.is_authenticated:
+            raise PermissionDenied
+        provider = _provider_or_404(provider)
+        if provider.uses_oauth or not provider.is_ready():
+            raise Http404
+        connection = CalendarConnection.objects.filter(user=request.user, provider=provider.name).first() or \
+            CalendarConnection(user=request.user, provider=provider.name)
+        try:
+            provider.connect_password(
+                connection, request.POST.get('server', ''), request.POST.get('username', '').strip(),
+                request.POST.get('password', ''),
+            )
+        except SyncError as error:
+            messages.error(request, _('{provider} did not connect: {reason}').format(
+                provider=provider.label, reason=error,
+            ))
+            return redirect('plugins:netbox_calendar:my_feed')
+        connection.status = CalendarConnection.STATUS_ACTIVE
+        connection.last_error = ''
+        connection.save()
+        engine.enqueue('sync_one', connection.pk)
+        messages.success(request, _('{provider} is connected. Your events will appear there in a minute or two.').format(
+            provider=provider.label,
+        ))
+        return redirect('plugins:netbox_calendar:my_feed')
+
+
 class SyncCallbackView(ConditionalLoginRequiredMixin, View):
     """Where the provider sends the browser back after sign-in: store the tokens and start the first sync."""
 
@@ -925,6 +961,8 @@ class SyncCallbackView(ConditionalLoginRequiredMixin, View):
         if not request.user.is_authenticated:
             return redirect(f"{reverse('login')}?next={request.path}")
         provider = _provider_or_404(provider)
+        if not provider.uses_oauth:
+            raise Http404
         waiting = request.session.pop(_SESSION_KEY, None) or {}
         back = redirect('plugins:netbox_calendar:my_feed')
         if request.GET.get('error'):
@@ -1008,7 +1046,7 @@ class SyncAdminView(ConditionalLoginRequiredMixin, View):
                 'provider': provider,
                 'enabled': provider.is_enabled(),
                 'missing': provider.missing_settings(),
-                'redirect_uri': sync_redirect_uri(request, provider),
+                'redirect_uri': sync_redirect_uri(request, provider) if provider.uses_oauth else '',
             }
             for provider in sync.PROVIDERS.values()
         ]

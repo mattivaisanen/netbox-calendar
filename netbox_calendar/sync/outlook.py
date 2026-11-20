@@ -19,33 +19,25 @@ Only NetBox talks to Microsoft (login.microsoftonline.com and
 graph.microsoft.com, over HTTPS). The user's browser does the sign-in
 redirect, so NetBox itself needs no address reachable from the internet.
 """
-import base64
-import json
 import logging
 import time as time_module
 from datetime import datetime, timedelta, timezone as dt_timezone
 from urllib.parse import quote, urlencode
 
-import requests
 from django.conf import settings
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from .. import recurrence
-from ..ical import absolute_url
-from ..lookup import describe
 from ..plugin_settings import config_value, get_setting, on
 from . import tokens
-from .base import AuthExpired, NotFound, Provider, SyncError, digest
+from .base import AuthExpired, NotFound, Provider, SyncError, digest, event_text, id_token_claims
 
 logger = logging.getLogger('netbox_calendar.sync')
 
 #: What NetBox asks the user to consent to. openid/profile/email name the
 #: account; offline_access gives the refresh token.
 SCOPES = 'openid profile email offline_access Calendars.ReadWrite'
-
-#: Seconds to wait for Microsoft before giving up on a request.
-TIMEOUT = 20
 
 #: Rules Graph can't express are sent as single events in this window.
 SINCE = timedelta(days=30)
@@ -198,16 +190,7 @@ def _relative(days, setpos):
 
 def _details(event):
     """What every Outlook copy of the event shows, apart from its time."""
-    objects_text = describe(event)
-    link = absolute_url(event.get_absolute_url())
-    text = '\n\n'.join(part for part in (
-        event.description,
-        f'Concerns: {objects_text}' if objects_text else '',
-        f'Owner: {event.owner_name}' if event.event_owner_id else '',
-        f'Impact: {event.get_impact_display()}',
-        event.comments,
-        link,
-    ) if part)
+    objects_text, text = event_text(event)
     if event.impact == 'none':
         show_as = 'free'
     elif event.status == 'planned':
@@ -280,6 +263,7 @@ def _schedule(data):
 class OutlookProvider(Provider):
     name = 'outlook'
     label = _('Outlook')
+    title = _('Outlook Calendar')
     icon = 'microsoft-outlook'
 
     # Settings
@@ -313,19 +297,6 @@ class OutlookProvider(Provider):
         if not self.client_secret():
             missing.append('outlook_client_secret')
         return missing
-
-    # HTTP
-
-    def _http(self, method, url, **kwargs):
-        """One request to Microsoft. Tests replace this."""
-        response = requests.request(
-            method, url, timeout=TIMEOUT, proxies=getattr(settings, 'HTTP_PROXIES', None), **kwargs,
-        )
-        try:
-            body = response.json() if response.content else {}
-        except ValueError:
-            body = {}
-        return response.status_code, body, response.headers
 
     def _token_request(self, fields):
         status, body, _headers = self._http(
@@ -420,7 +391,7 @@ class OutlookProvider(Provider):
         if not body.get('refresh_token'):
             raise SyncError('Microsoft gave no refresh token; check that offline_access is allowed.')
         self._store_tokens(connection, body)
-        claims = _id_token_claims(body.get('id_token', ''))
+        claims = id_token_claims(body.get('id_token', ''))
         connection.account = (
             claims.get('preferred_username') or claims.get('email') or claims.get('name') or ''
         )[:255]
@@ -567,16 +538,3 @@ def _parse_utc(text):
     if value.tzinfo is None:
         value = value.replace(tzinfo=dt_timezone.utc)
     return value.astimezone(dt_timezone.utc).replace(microsecond=0)
-
-
-def _id_token_claims(id_token):
-    """
-    The claims of the ID token that came with the tokens. It came straight
-    from Microsoft's token endpoint over HTTPS, so its signature needn't be
-    checked to read the account name (OpenID Connect Core 3.1.3.7).
-    """
-    try:
-        part = id_token.split('.')[1]
-        return json.loads(base64.urlsafe_b64decode(part + '=' * (-len(part) % 4)))
-    except (IndexError, ValueError):
-        return {}

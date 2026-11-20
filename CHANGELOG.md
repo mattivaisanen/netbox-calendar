@@ -2,14 +2,16 @@
 
 ## Unreleased
 
-- **Outlook sync.** Users connect their own Outlook calendar on
-  **Calendar → Calendar Feed**, and NetBox pushes their events into a
-  NetBox calendar in their mailbox: series with skipped and moved
-  occurrences, kept up to date after every save and every hour. It needs
-  only outbound HTTPS from NetBox, so it works when NetBox is internal. It
-  is off by default (`outlook_sync`) and needs an Entra app registration;
-  see [docs/calendar-sync.md](docs/calendar-sync.md). **Calendar →
-  Calendar Sync** lists connected users for superusers. Run `migrate`.
+- **Calendar sync.** Users connect their own Outlook, Google Calendar or
+  CalDAV calendar (Nextcloud, Fastmail, iCloud and others) on **Calendar →
+  Calendar Feed**, and NetBox pushes their events into a NetBox calendar
+  there: series with skipped and moved occurrences, kept up to date after
+  every save and every hour. It needs only outbound connections from
+  NetBox, so it works when NetBox is internal. Each service is off by
+  default (`outlook_sync`, `google_sync`, `caldav_sync`); Outlook needs an
+  Entra app registration and Google an OAuth client. See
+  [docs/calendar-sync.md](docs/calendar-sync.md). **Calendar → Calendar
+  Sync** lists connected users for superusers. Run `migrate`.
 - The event form's objects are rows: *Include* or *Exclude*, a type and
   its objects, with a button to remove each row and **Add** for another.
   Adding or changing a row no longer redraws the form. **Result** under

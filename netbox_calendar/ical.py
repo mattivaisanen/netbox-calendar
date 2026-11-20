@@ -254,17 +254,14 @@ def calendar(events, name='NetBox', method='PUBLISH', describe=None, attendees=(
     A whole .ics file. `describe(event)` gives the "Concerns:" text of an
     event; `attendees` and `organizer` are (name, e-mail) for invites;
     `refresh` is an iCal duration such as PT1H, for subscription feeds.
+    `method` and `name` None leave them out, as a CalDAV server wants.
     """
-    lines = [
-        'BEGIN:VCALENDAR',
-        'VERSION:2.0',
-        f'PRODID:{PRODID}',
-        'CALSCALE:GREGORIAN',
-        f'METHOD:{method}',
+    lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', f'PRODID:{PRODID}', 'CALSCALE:GREGORIAN']
+    if method:
+        lines.append(f'METHOD:{method}')
+    if name:
         # Calendar name: NAME is the standard (RFC 7986), X-WR-CALNAME is what Outlook reads.
-        f'NAME:{escape(name)}',
-        f'X-WR-CALNAME:{escape(name)}',
-    ]
+        lines += [f'NAME:{escape(name)}', f'X-WR-CALNAME:{escape(name)}']
     if refresh:
         # How often subscribers should fetch the feed again.
         lines += [f'REFRESH-INTERVAL;VALUE=DURATION:{refresh}', f'X-PUBLISHED-TTL:{refresh}']

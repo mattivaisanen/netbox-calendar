@@ -146,6 +146,29 @@ SETTINGS = (
         KIND_TEXT,
     ),
     Setting(
+        'google_sync', _('Google Calendar sync'),
+        _('Users can connect their Google Calendar on the Calendar Feed page. Needs a Google Cloud OAuth '
+          'client; see docs/calendar-sync.md.'),
+        KIND_BOOL,
+    ),
+    Setting(
+        'google_client_id', _('Google client ID'),
+        _('The client ID of the Google OAuth client. Its secret goes in configuration.py as '
+          'google_client_secret.'),
+        KIND_TEXT,
+    ),
+    Setting(
+        'caldav_sync', _('CalDAV sync'),
+        _('Users can connect a CalDAV calendar (Nextcloud, Fastmail, iCloud and others) with an app password.'),
+        KIND_BOOL,
+    ),
+    Setting(
+        'caldav_server', _('CalDAV server'),
+        _('The one server users connect to, such as https://cloud.example.com/remote.php/dav. Empty: users '
+          'type the address, and NetBox connects to whatever they give.'),
+        KIND_TEXT,
+    ),
+    Setting(
         'sync_calendar_name', _('Synced calendar name'),
         _('The name of the calendar NetBox creates in each connected account. Empty: NetBox.'),
         KIND_TEXT,

@@ -1,26 +1,30 @@
-# Calendar sync (Outlook)
+# Calendar sync
 
-Calendar sync puts NetBox events straight into each user's Outlook
-calendar. It is the option to use when Outlook can't subscribe to the iCal
-feed, which happens when NetBox is only reachable inside your network.
+Calendar sync puts NetBox events straight into each user's own calendar:
+**Outlook** (Microsoft 365 or Outlook.com), **Google Calendar** (Google
+Workspace or a personal account), or any **CalDAV** server (Nextcloud,
+Fastmail, iCloud, SOGo, Zimbra, Radicale, Baïkal, mailbox.org, ...). It is
+the option to use when a calendar can't subscribe to the iCal feed, which
+happens when NetBox is only reachable inside your network.
 
-- Each user connects their own calendar on **Calendar → Calendar Feed**
-  and signs in with their own Microsoft account. NetBox gets *delegated*
-  access to that user's calendars only, not application-wide access to
-  every mailbox.
-- NetBox creates a calendar of its own in the mailbox (named **NetBox**
+- Each user connects their own calendar on **Calendar → Calendar Feed**.
+  For Outlook and Google they sign in with their own account and NetBox
+  gets *delegated* access to that one account. For CalDAV they give a
+  server address and an app password.
+- NetBox creates a calendar of its own in the account (named **NetBox**
   by default) and keeps it up to date. Users can colour it, hide it or
   delete it without touching their own events.
-- Sync is one way, from NetBox to Outlook. Edits made in Outlook are not
+- Sync is one way, from NetBox to the calendar. Edits made there are not
   sent back, and the next change in NetBox overwrites them.
-- Only NetBox's server talks to Microsoft, over outbound HTTPS to
-  `login.microsoftonline.com` and `graph.microsoft.com`. The sign-in
-  redirect runs in the user's browser, so NetBox needs no address that can
-  be reached from the internet.
+- Only NetBox's server talks to the calendar service, over outbound HTTPS.
+  The sign-in redirect runs in the user's browser, so NetBox needs no
+  address that can be reached from the internet. A CalDAV server inside
+  your network needs no internet at all.
 
-Sync is off until you turn it on.
+Each provider is off until you turn it on, and you can turn on any mix
+of them.
 
-## Setting it up
+## Outlook setup
 
 You do this once for your organization. It needs someone who can create
 app registrations in Microsoft Entra ID and, in most tenants, grant admin
@@ -115,14 +119,89 @@ that are still missing.
 If NetBox reaches the internet through a proxy, set NetBox's own
 `HTTP_PROXIES` setting. The sync uses it.
 
+## Google Calendar setup
+
+You do this once. It needs a Google Cloud project; for Google Workspace,
+an admin of the Workspace.
+
+1. In the [Google Cloud console](https://console.cloud.google.com), pick
+   or create a project and enable the **Google Calendar API** (*APIs &
+   Services → Library*).
+2. **APIs & Services → OAuth consent screen**: user type **Internal**
+   for a Workspace organization (only its users can connect, and no
+   review by Google is needed), or **External** for personal accounts.
+   Add the scope `.../auth/calendar.app.created`.
+3. **APIs & Services → Credentials → Create credentials → OAuth client
+   ID**, type **Web application**. Under **Authorized redirect URIs** add
+   the Google redirect URI from **Calendar → Calendar Sync**, such as
+   `https://netbox.corp.internal/plugins/calendar/sync/google/callback/`.
+   Google accepts `http://` only for `localhost`.
+4. Copy the client ID and client secret into `configuration.py`:
+
+```python
+PLUGINS_CONFIG = {
+    'netbox_calendar': {
+        'google_sync': True,
+        'google_client_id': '1234567890-abc.apps.googleusercontent.com',
+        'google_client_secret': os.environ.get('NETBOX_CALENDAR_GOOGLE_SECRET', ''),
+    },
+}
+```
+
+5. Restart NetBox and its worker.
+
+NetBox asks only for `calendar.app.created`: it can create calendars and
+manage the ones it made, and can't read or change anything else in the
+account. An *External* app in testing mode works only for the test users
+you list on the consent screen, and its sign-ins expire after 7 days;
+publish the app to avoid that.
+
+NetBox's server reaches `oauth2.googleapis.com` and `www.googleapis.com`.
+
+## CalDAV setup
+
+Turn on **CalDAV sync** on **Calendar → Settings** (`caldav_sync`). There
+is nothing to register.
+
+- **CalDAV server** (`caldav_server`) empty: each user types their
+  server's address. NetBox then connects to whatever address a user gives,
+  including hosts inside your network, so leave it empty only when you
+  trust your NetBox users with that.
+- **CalDAV server** set, such as your company's Nextcloud
+  `https://cloud.corp.internal/remote.php/dav`: users only give their user
+  name and app password.
+
+NetBox finds the user's calendar home on the server and creates a
+**NetBox** calendar in it. An address that points at one calendar is used
+as it is, and disconnecting then removes only NetBox's events from it.
+
+Server addresses that work:
+
+| Server | Address |
+|---|---|
+| Nextcloud | `https://<host>/remote.php/dav` |
+| Fastmail | `https://caldav.fastmail.com/dav/` |
+| iCloud | `https://caldav.icloud.com/` |
+| mailbox.org | `https://dav.mailbox.org/` |
+| SOGo | `https://<host>/SOGo/dav/` |
+| Radicale, Baïkal and others | the server's address, or the address of one calendar |
+
+Users should make an **app password** (Nextcloud: *Settings → Security*;
+Fastmail: *Settings → Privacy & Security → App passwords*; iCloud:
+*appleid.apple.com → App-Specific Passwords*). NetBox stores it encrypted.
+A server with an internal CA certificate needs that CA trusted by NetBox's
+Python (`REQUESTS_CA_BUNDLE`).
+
 ## Connecting a calendar (users)
 
-1. Open **Calendar → Calendar Feed** and press **Connect Outlook
-   Calendar**.
-2. Sign in with your Microsoft account and accept the permissions.
+1. Open **Calendar → Calendar Feed**. Each calendar your admin turned on
+   has a card.
+2. **Outlook** or **Google Calendar**: press **Connect**, sign in with your
+   account and accept the permissions. **CalDAV**: give the server address
+   (unless your admin set it), your user name and an app password, and
+   press **Connect**.
 3. Back in NetBox, the card shows *Active*. Your events appear in a
-   calendar called **NetBox** within a minute or two. In Outlook it is
-   under *My calendars*.
+   calendar called **NetBox** within a minute or two.
 
 Under **Events**, choose what goes in:
 
@@ -131,9 +210,12 @@ Under **Events**, choose what goes in:
 - **All events I can see**: every event you may view in NetBox.
 
 **Sync Now** pushes everything again. **Disconnect** stops the sync and,
-unless you untick the box, deletes the NetBox calendar from Outlook.
+unless you untick the box, deletes the NetBox calendar. You can connect
+several services at once.
 
 ## What gets synced
+
+Outlook:
 
 | In NetBox | In Outlook |
 |---|---|
@@ -152,7 +234,17 @@ unless you untick the box, deletes the NetBox calendar from Outlook.
 | Event type | Category |
 | Linked objects, owner, impact, link | Location and body |
 
-Times are sent in NetBox's `TIME_ZONE`, so a repeating event keeps its
+Google Calendar gets the iCal rule as it is: a series with the same
+`RRULE`, skipped occurrences as `EXDATE`s, and moved occurrences changed in
+place. Up to five reminders. Impact *None* is shown as free, status
+*Planned* as tentative.
+
+CalDAV gets each event as the same `.ics` the feed has, so every rule,
+skipped and moved occurrence arrives exactly. No attendees are included,
+so the server sends nobody an invitation.
+
+On all of them, cancelled events and events that ended more than 30 days
+ago are removed. Times are sent in NetBox's `TIME_ZONE`, so a repeating event keeps its
 time when daylight saving time starts or ends.
 
 ## When it runs
@@ -177,6 +269,8 @@ time when daylight saving time starts or ends.
 
 ## Problems
 
+Outlook:
+
 | Shown | Meaning and fix |
 |---|---|
 | *Sign-in expired* | The refresh token stopped working. Causes: a password reset, a revoked session, a Conditional Access change, more than 90 days without a sync, or a changed NetBox `SECRET_KEY`. The user gets a bell notification and presses **Connect Again**. |
@@ -189,19 +283,31 @@ time when daylight saving time starts or ends.
 | *ErrorAccessDenied* | The `Calendars.ReadWrite` permission is missing. |
 | An event shows an error | That event failed. The others went through, and it is tried again on the next sync. |
 
+Google and CalDAV:
+
+| Shown | Meaning and fix |
+|---|---|
+| *redirect_uri_mismatch* | Add the Google redirect URI from **Calendar → Calendar Sync** to the OAuth client. |
+| *access_denied* or *org_internal* | The account is outside the Workspace of an *Internal* app, or not a test user of an app in testing. |
+| *Sign-in expired* (Google) | The user removed NetBox under their Google account's third-party access, or an app in testing mode passed 7 days. Connect again. |
+| *The server refused the user name or password* | Wrong user name or app password, or an expired app password. Connect again with a new one. |
+| *No calendars found* | The address isn't the server's CalDAV address. Give the address of one calendar instead. |
+| *The server would not create a calendar* | Make a calendar yourself on the server and connect with its address. |
+
 ## Security
 
 - Tokens are stored encrypted with a key derived from NetBox's
   `SECRET_KEY`. Changing the key makes them unreadable, and users connect
   again.
-- The client secret is read from `configuration.py` only.
-- Sign-in uses the authorization code flow with PKCE and a one-time
-  state, so a sign-in can't be completed from another browser.
+- Client secrets are read from `configuration.py` only. CalDAV app
+  passwords are stored encrypted like tokens.
+- OAuth sign-in uses the authorization code flow with PKCE and a
+  one-time state, so a sign-in can't be completed from another browser.
 - Users can revoke NetBox's access themselves on
   [myaccount.microsoft.com](https://myaccount.microsoft.com) under *Apps
   and services*, and admins can revoke it under **Enterprise applications**.
 
-## National clouds
+## Outlook in national clouds
 
 For Microsoft's government or China clouds, set the sign-in and Graph
 addresses in `configuration.py`. For example, for US Government L4:
@@ -221,3 +327,5 @@ addresses in `configuration.py`. For example, for US Government L4:
 - **Teams or Slack channels**: an Event Rule on the calendar's notices
   with a webhook posts to a channel. See
   [notifications.md](notifications.md#event-rules-and-webhooks).
+- **Classic Outlook for Windows and Apple Calendar** download the feed
+  from the user's own computer, so an internal feed address works there.
