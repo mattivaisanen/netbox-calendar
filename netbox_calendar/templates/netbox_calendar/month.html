@@ -16,6 +16,9 @@
   .nbcal-day { font-size: .8rem; font-weight: 600; }
   .nbcal-entry { font-size: .75rem; border-radius: .25rem; padding: 0 .3rem; margin-bottom: 2px; text-decoration: none; }
   .nbcal-entry:hover { filter: brightness(.92); }
+  /* Past events: grayed out (color drained, faded), clearer on hover. */
+  .nbcal-entry.nbcal-past { opacity: .5; filter: grayscale(.85); }
+  .nbcal-entry.nbcal-past:hover { opacity: .8; filter: grayscale(.4); }
 </style>
 
 {% include 'netbox_calendar/inc/filters.html' with keep=keep_month %}

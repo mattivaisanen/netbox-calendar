@@ -5,14 +5,18 @@ Everything is under **Calendar** in the NetBox menu.
 ## Views
 
 - **Month** (Calendar → Month): a month grid of colored events, past ones
-  faded and cancelled ones struck through. Click a day's **+** to add an
+  grayed out and cancelled ones struck through. Click a day's **+** to add an
   event on it.
 - **Timeline** (Calendar → Timeline): running and upcoming events in date
   order, grouped by day, with impact and linked objects. **Show past**
   looks back instead; **Further ahead** and **Further back** widen the
   range.
 - **Events** (Calendar → Events): the standard NetBox list, with filters,
-  export, bulk edit, bulk import and bulk delete.
+  export, bulk edit, bulk import and bulk delete. It lists upcoming and
+  running events; past ones (a series once its last time is over) sit
+  grayed out in their own **Past events** section below, newest first.
+  **Open as list** there, or the **Past** filter, gives the full list of
+  past events with bulk actions. Exports include past events.
 - **Upcoming Events** dashboard widget: the next events, set per widget to
   a number of days ahead, a maximum count, some event types or only your
   own events.

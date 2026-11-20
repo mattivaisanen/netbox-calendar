@@ -1,0 +1,109 @@
+{% extends 'generic/object_list.html' %}
+{% load buttons helpers i18n %}
+
+{% comment %}
+NetBox's object list with past events split off, styled like the Approval
+Inbox sections: the main card lists upcoming and running events; past ones
+load (HTMX, embedded table) into a dimmed card below it. With a `past`
+filter set the page is the plain NetBox list. The content block is NetBox's
+own (generic/object_list.html), plus the card headers and the past card.
+{% endcomment %}
+
+{% block content %}
+
+    {# Object list tab #}
+    <div class="tab-pane show active" id="object-list" role="tabpanel" aria-labelledby="object-list-tab">
+
+      {# Applied filters #}
+      {% if filter_form %}
+        {% applied_filters model filter_form request.GET %}
+      {% endif %}
+
+      {# Object table controls #}
+      {% include 'inc/table_controls_htmx.html' with table_modal="ObjectTable_config" %}
+
+      <form method="post" class="form form-horizontal">
+        {% csrf_token %}
+        {# "Select all" form #}
+        {% if table.paginator.num_pages > 1 %}
+          <div id="select-all-box" class="d-none card d-print-none">
+            <div class="form col-md-12">
+              <div class="card-body d-flex justify-content-between">
+                <div class="form-check">
+                  <input type="checkbox" id="select-all" name="_all" class="form-check-input" />
+                  <label for="select-all" class="form-check-label">
+                    {% blocktrans trimmed with count=table.page.paginator.count object_type_plural=table.data.verbose_name_plural %}
+                      Select <strong>all <span class="total-object-count">{{ count }}</span> {{ object_type_plural }}</strong> matching query
+                    {% endblocktrans %}
+                  </label>
+                </div>
+                <div class="btn-list bulk-action-buttons">
+                  {% action_buttons actions model multi=True %}
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
+        <div class="form form-horizontal">
+          <input type="hidden" id="object-list-return-url" name="return_url" value="{% if return_url %}{{ return_url }}{% else %}{{ request.path }}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}{% endif %}" />
+
+          {# Objects table: upcoming and running events, unless a past filter is set #}
+          <div class="card mb-3">
+            {% if split_past %}
+              <h2 class="card-header d-flex align-items-center">
+                <span class="flex-grow-1">
+                  {% trans "Upcoming and running" %}
+                  <span class="badge text-bg-primary ms-1 total-object-count">{{ table.page.paginator.count|default:"0" }}</span>
+                </span>
+              </h2>
+            {% endif %}
+            <div class="htmx-container table-responsive" id="object_list">
+              {% include 'htmx/table.html' %}
+            </div>
+          </div>
+          {# /Objects table #}
+
+          {# Form buttons #}
+          <div class="card btn-list sticky-actions d-print-none" data-sticky-position="right" data-sticky-when="selection">
+            {% block bulk_buttons %}
+              <div class="btn-list bulk-action-buttons">
+                {% action_buttons actions model multi=True %}
+              </div>
+            {% endblock %}
+          </div>
+          {# /Form buttons #}
+
+        </div>
+      </form>
+
+      {# Past events: dimmed, read-only, newest first. "Open as list" gives the full list with bulk actions. #}
+      {% if split_past and past_count %}
+        <div class="card mb-3 opacity-75" id="nbcal-past-events">
+          <h2 class="card-header d-flex align-items-center">
+            <span class="flex-grow-1">
+              {% trans "Past events" %}
+              <span class="badge text-bg-secondary ms-1">{{ past_count }}</span>
+            </span>
+            <a href="?{{ past_list_query }}" class="btn btn-sm btn-ghost-secondary">
+              <i class="mdi mdi-format-list-bulleted"></i> {% trans "Open as list" %}
+            </a>
+          </h2>
+          <div class="htmx-container table-responsive"
+               hx-get="{{ request.path }}?{{ past_table_query }}" hx-trigger="load" hx-swap="outerHTML">
+            <div class="card-body text-muted">{% trans "Loading..." %}</div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+    {# /Object list tab #}
+
+    {# Filters tab #}
+    {% if filter_form %}
+      <div class="tab-pane show" id="filters-form" role="tabpanel" aria-labelledby="filters-form-tab">
+        {% include 'inc/filter_list.html' %}
+      </div>
+    {% endif %}
+    {# /Filters tab #}
+
+{% endblock content %}
