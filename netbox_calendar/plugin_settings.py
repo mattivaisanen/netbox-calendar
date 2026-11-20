@@ -195,6 +195,39 @@ SETTINGS = (
 
 BY_KEY = {setting.key: setting for setting in SETTINGS}
 
+
+@dataclass(frozen=True)
+class Tab:
+    """One tab of the Settings page and the settings it shows."""
+    slug: str
+    label: str
+    keys: tuple
+    #: A line shown above the settings, or empty.
+    intro: str = ''
+
+
+#: The Settings page tabs, in order. Each tab saves only its own settings.
+#: A setting may sit on more than one tab (the synced calendar name is the
+#: same for every sync provider).
+TABS = (
+    Tab('general', _('General'), (
+        'netbox_url', 'first_weekday', 'restrict_editing', 'conflict_warnings', 'freeze_banner',
+        'scope_rollup', 'auto_status', 'change_requests',
+    )),
+    Tab('notifications', _('Notifications'), (
+        'notifications', 'direct_email', 'message', 'email_subject', 'email_body',
+    ), _('Who is notified is set per event type and event role.')),
+    Tab('feed', _('iCal Feed'), ('ical_feeds',)),
+    Tab('outlook', _('Outlook'), ('outlook_sync', 'outlook_client_id', 'outlook_tenant', 'sync_calendar_name'),
+        _('Calendar → Calendar Sync lists what is still missing and who is connected.')),
+    Tab('google', _('Google'), ('google_sync', 'google_client_id', 'sync_calendar_name'),
+        _('Calendar → Calendar Sync lists what is still missing and who is connected.')),
+    Tab('caldav', _('CalDAV'), ('caldav_sync', 'caldav_server', 'sync_calendar_name'),
+        _('Calendar → Calendar Sync lists who is connected.')),
+)
+
+TAB_BY_SLUG = {tab.slug: tab for tab in TABS}
+
 #: Whether the PluginSetting table exists yet (code can run before `migrate`).
 _table_ready = False
 

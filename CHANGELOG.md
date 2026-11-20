@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Calendar → Settings** has tabs: General, Notifications, iCal Feed,
+  Outlook, Google and CalDAV. Each tab saves only its own settings, and
+  shows how many of them are saved here.
 - **Calendar sync.** Users connect their own Outlook, Google Calendar or
   CalDAV calendar (Nextcloud, Fastmail, iCloud and others) on **Calendar →
   Calendar Feed**, and NetBox pushes their events into a NetBox calendar

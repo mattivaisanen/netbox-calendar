@@ -1072,30 +1072,48 @@ class SettingsView(ConditionalLoginRequiredMixin, View):
             raise PermissionDenied(_('Only superusers can change Calendar settings.'))
         return super().dispatch(request, *args, **kwargs)
 
-    def _render(self, request, form):
+    @staticmethod
+    def _tab(request):
+        """The tab in ?tab=, else the first one."""
+        return plugin_settings.TAB_BY_SLUG.get(request.GET.get('tab'), plugin_settings.TABS[0])
 
+    @staticmethod
+    def _tab_url(tab):
+        return f"{reverse('plugins:netbox_calendar:settings')}?tab={tab.slug}"
+
+    def _render(self, request, tab, form):
         saved = {row.key: row for row in PluginSetting.objects.select_related('updated_by')}
         rows = [
             {'field': form[setting.key], 'source': plugin_settings.source(setting.key), 'saved': saved.get(setting.key)}
-            for setting in plugin_settings.SETTINGS
+            for setting in form.settings
         ]
-        return render(request, 'netbox_calendar/settings.html', {'form': form, 'rows': rows})
+        # Each tab shows how many of its settings are saved here, like the
+        # counts on NetBox's object tabs.
+        tabs = [
+            {'tab': other, 'saved': sum(key in saved for key in other.keys)}
+            for other in plugin_settings.TABS
+        ]
+        return render(request, 'netbox_calendar/settings.html', {
+            'form': form, 'rows': rows, 'tab': tab, 'tabs': tabs,
+        })
 
     def get(self, request):
-        return self._render(request, forms.SettingsForm())
+        tab = self._tab(request)
+        return self._render(request, tab, forms.SettingsForm(keys=tab.keys))
 
     def post(self, request):
+        tab = self._tab(request)
         reset_key = request.POST.get('reset')
         if reset_key in plugin_settings.BY_KEY:
             plugin_settings.reset(reset_key)
             messages.success(request, _('{setting} now follows configuration.py.').format(
                 setting=plugin_settings.BY_KEY[reset_key].label,
             ))
-            return redirect('plugins:netbox_calendar:settings')
-        form = forms.SettingsForm(request.POST)
+            return redirect(self._tab_url(tab))
+        form = forms.SettingsForm(request.POST, keys=tab.keys)
         if not form.is_valid():
-            return self._render(request, form)
+            return self._render(request, tab, form)
         for key, value in form.stored_values().items():
             plugin_settings.save(key, value, user=request.user)
-        messages.success(request, _('Settings saved.'))
-        return redirect('plugins:netbox_calendar:settings')
+        messages.success(request, _('{tab} settings saved.').format(tab=tab.label))
+        return redirect(self._tab_url(tab))

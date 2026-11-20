@@ -1312,11 +1312,18 @@ class CalendarFilterForm(forms.Form):
 #
 
 class SettingsForm(forms.Form):
-    """One field per setting in plugin_settings.SETTINGS."""
+    """One field per setting of a Settings page tab (all settings without
+    `keys`). Only these fields are saved, so a tab never touches the
+    settings of another: an unchecked box missing from the POST would
+    otherwise read as "off"."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, keys=None, **kwargs):
         super().__init__(*args, **kwargs)
-        for setting in plugin_settings.SETTINGS:
+        # In the tab's order, so related settings sit together.
+        self.settings = (
+            list(plugin_settings.SETTINGS) if keys is None else [plugin_settings.BY_KEY[key] for key in keys]
+        )
+        for setting in self.settings:
             if setting.kind == plugin_settings.KIND_BOOL:
                 field = forms.BooleanField(required=False)
             elif setting.kind == plugin_settings.KIND_CHOICE:
@@ -1339,7 +1346,7 @@ class SettingsForm(forms.Form):
     def stored_values(self):
         return {
             setting.key: setting.normalize(self.cleaned_data.get(setting.key))
-            for setting in plugin_settings.SETTINGS
+            for setting in self.settings
         }
 
 

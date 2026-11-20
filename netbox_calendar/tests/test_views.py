@@ -39,6 +39,20 @@ class PageTests(TestCase):
             with self.subTest(page=page):
                 self.assertEqual(self.client.get(page).status_code, 200)
 
+    def test_settings_tabs(self):
+        # Every setting sits on a tab, and every tab loads.
+        on_tabs = {key for tab in plugin_settings.TABS for key in tab.keys}
+        self.assertEqual(on_tabs, set(plugin_settings.BY_KEY))
+        for tab in plugin_settings.TABS:
+            with self.subTest(tab=tab.slug):
+                self.assertEqual(self.client.get(url('settings') + f'?tab={tab.slug}').status_code, 200)
+
+        # Saving one tab leaves the settings of the others alone.
+        plugin_settings.save('ical_feeds', False)
+        self.client.post(url('settings') + '?tab=general', {'first_weekday': '6'})
+        self.assertEqual(plugin_settings.get_setting('first_weekday'), '6')
+        self.assertIs(plugin_settings.get_setting('ical_feeds'), False)
+
     def test_device_page_shows_its_events(self):
         response = self.client.get(reverse('dcim:device', args=[self.device.pk]))
         self.assertContains(response, self.event.title)

@@ -50,7 +50,10 @@ PLUGINS_CONFIG = {
 
 ## Changing settings in NetBox
 
-**Calendar → Settings** is shown to superusers only.
+**Calendar → Settings** is shown to superusers only. Its tabs group the
+settings: **General**, **Notifications**, **iCal Feed**, **Outlook**,
+**Google** and **CalDAV**. **Save** stores only the settings of the open
+tab. A number on a tab counts its settings saved on the page.
 
 - A value saved on the page overrides `configuration.py`. Each setting shows
   where its value comes from: *Saved here*, *From configuration.py* or
