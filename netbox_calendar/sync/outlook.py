@@ -381,14 +381,18 @@ class OutlookProvider(Provider):
                 wait = 2
             time_module.sleep(wait)
             return self._graph(connection, method, path, json_body, params, retry=False)
+        if status < 400:
+            return body
+        error = body.get('error', {}) if isinstance(body, dict) else {}
+        text = f"{error.get('code', f'HTTP {status}')}: {error.get('message', '')}".strip(': ')
+        if error.get('code') == 'MailboxNotEnabledForRESTAPI':
+            # Graph answers 404 for an account without an Exchange Online mailbox.
+            raise SyncError(f'{text} The signed-in account has no Outlook mailbox.')
         if status == 404:
-            raise NotFound(path)
+            raise NotFound(f'{method} {path}: {text}')
         if status == 401:
             raise AuthExpired('Microsoft refused the sign-in. Connect again.')
-        if status >= 400:
-            error = body.get('error', {}) if isinstance(body, dict) else {}
-            raise SyncError(f"{error.get('code', f'HTTP {status}')}: {error.get('message', '')}".strip(': '))
-        return body
+        raise SyncError(text)
 
     # Signing in
 
