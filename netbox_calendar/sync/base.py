@@ -92,9 +92,13 @@ class Provider:
         Uses NetBox's HTTP_PROXIES. The only method that touches the
         network; tests replace it.
         """
-        response = requests.request(
-            method, url, timeout=self.timeout, proxies=getattr(settings, 'HTTP_PROXIES', None), **kwargs,
-        )
+        try:
+            response = requests.request(
+                method, url, timeout=self.timeout, proxies=getattr(settings, 'HTTP_PROXIES', None), **kwargs,
+            )
+        except requests.RequestException as error:
+            # Unreachable, DNS, TLS or timeout: kept on the connection like any other failure.
+            raise SyncError(f'Could not reach {url.split("?")[0]}: {type(error).__name__}')
         try:
             body = response.json() if response.content else {}
         except ValueError:

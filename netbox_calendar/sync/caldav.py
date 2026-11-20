@@ -104,11 +104,15 @@ class CalDAVProvider(Provider):
         """
         auth = (connection.account, password if password is not None else tokens.decrypt(connection.refresh_token))
         for _hop in range(MAX_REDIRECTS):
-            response = requests.request(
-                method, url, data=body.encode() if isinstance(body, str) else body, headers=headers or {},
-                auth=auth, timeout=self.timeout, allow_redirects=False,
-                proxies=getattr(settings, 'HTTP_PROXIES', None),
-            )
+            try:
+                response = requests.request(
+                    method, url, data=body.encode() if isinstance(body, str) else body, headers=headers or {},
+                    auth=auth, timeout=self.timeout, allow_redirects=False,
+                    proxies=getattr(settings, 'HTTP_PROXIES', None),
+                )
+            except requests.RequestException as error:
+                # Unreachable, DNS, TLS or timeout: shown to the user, never a server error.
+                raise SyncError(f'Could not reach {url}: {type(error).__name__}')
             if response.status_code in (301, 302, 303, 307, 308) and response.headers.get('Location'):
                 url = urljoin(url, response.headers['Location'])
                 continue
