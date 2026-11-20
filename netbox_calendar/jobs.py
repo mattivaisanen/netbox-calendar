@@ -1,11 +1,15 @@
 """
-The background job: reminders, start and end notices, and the automatic
+The background jobs. The first: reminders, start and end notices, and the automatic
 status of single events. Runs every five minutes in NetBox's background
 worker (the one that sends webhooks and runs scripts).
 
 Each notice is sent once (SentNotice). One the job missed, because the
 worker was stopped say, is still sent up to reminder_grace_minutes late,
 never later, so a restarted worker doesn't flood anyone with old news.
+
+The second, hourly: a full push to every connected outside calendar
+(sync/engine.py), which catches what the push after each save missed and
+moves the window of rules sent as single events.
 """
 import logging
 from datetime import timedelta
@@ -116,3 +120,17 @@ if system_job is not None:
         def run(self, *args, **kwargs):
             count = send_notices()
             self.logger.info(f'Sent {count} calendar notice(s).')
+
+
+    @system_job(interval=60)
+    class CalendarSyncJob(JobRunner):
+        class Meta:
+            name = 'Calendar sync'
+
+        def run(self, *args, **kwargs):
+            from .sync import any_enabled, engine
+
+            if not any_enabled():
+                return
+            count = engine.sync_all()
+            self.logger.info(f'Synced {count} calendar connection(s).')

@@ -1,16 +1,19 @@
+import base64
+import hashlib
 import secrets
 from datetime import date, datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
 from django.utils.text import capfirst
 from django.utils.translation import gettext as _
@@ -26,7 +29,9 @@ from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
 from . import agenda, filtersets, forms, ical, plugin_settings, recurrence, tables
 from .lookup import DEVICE_MATCHES, Targets, affected_devices, affected_vms, describe, filtered_objects
-from .models import Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting, ended_ids
+from .models import (
+    CalendarConnection, Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting, ended_ids,
+)
 from .permissions import can_edit, editable
 
 
@@ -834,6 +839,8 @@ class MyFeedView(ConditionalLoginRequiredMixin, View):
             request.build_absolute_uri(path),
             'base_url': plugin_settings.get_setting('netbox_url') or '',
             'event_types': EventType.objects.restrict(request.user, 'view'),
+            'sync_providers': sync_cards(request),
+            'scope_choices': CalendarConnection.SCOPE_CHOICES,
             'active_tab': 'feed',
         })
 
@@ -877,6 +884,216 @@ class FeedView(View):
 
 
 #
+# Calendar sync (sync/)
+#
+
+#: Where the sign-in state waits in the session between connect and callback.
+_SESSION_KEY = 'netbox_calendar_sync'
+
+
+def sync_redirect_uri(request, provider):
+    """The callback address registered with the provider (the Entra app's redirect URI)."""
+    path = reverse('plugins:netbox_calendar:sync_callback', args=[provider.name])
+    if plugin_settings.get_setting('netbox_url'):
+        return ical.absolute_url(path)
+    return request.build_absolute_uri(path)
+
+
+def sync_cards(request):
+    """One entry per enabled provider for the Calendar Feed page, with the user's connection."""
+    from . import sync
+
+    connections = {
+        row.provider: row for row in CalendarConnection.objects.filter(user=request.user)
+    }
+    return [
+        {'provider': provider, 'ready': provider.is_ready(), 'connection': connections.get(provider.name)}
+        for provider in sync.enabled_providers()
+    ]
+
+
+def _provider_or_404(name):
+    from . import sync
+
+    provider = sync.get_provider(name)
+    if provider is None or not provider.is_enabled():
+        raise Http404
+    return provider
+
+
+def _back(request, default='plugins:netbox_calendar:my_feed'):
+    """The page to return to: a local `return_url`, else `default`."""
+    url = request.POST.get('return_url') or request.GET.get('return_url') or ''
+    if url and url_has_allowed_host_and_scheme(url, allowed_hosts={request.get_host()}):
+        return redirect(url)
+    return redirect(default)
+
+
+class SyncConnectView(ConditionalLoginRequiredMixin, View):
+    """
+    Connecting a calendar. GET (OAuth providers): send the browser to the
+    provider's sign-in, with a one-time state and a PKCE challenge. POST
+    (CalDAV): check the server, user name and password.
+    """
+
+    def get(self, request, provider):
+        if not request.user.is_authenticated:
+            return redirect(f"{reverse('login')}?next={request.path}")
+        provider = _provider_or_404(provider)
+        if not provider.is_ready() or not provider.uses_oauth:
+            messages.error(request, _('{provider} sync is not set up yet. Ask an admin.').format(
+                provider=provider.label,
+            ))
+            return redirect('plugins:netbox_calendar:my_feed')
+        state = secrets.token_urlsafe(32)
+        verifier = secrets.token_urlsafe(64)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+        request.session[_SESSION_KEY] = {'provider': provider.name, 'state': state, 'verifier': verifier}
+        return redirect(provider.authorize_url(
+            sync_redirect_uri(request, provider), state, challenge, login_hint=request.user.email or '',
+        ))
+
+
+    def post(self, request, provider):
+        """Providers that take a server, user name and password (CalDAV): check them and connect."""
+        from .sync import engine
+        from .sync.base import SyncError
+
+        if not request.user.is_authenticated:
+            raise PermissionDenied
+        provider = _provider_or_404(provider)
+        if provider.uses_oauth or not provider.is_ready():
+            raise Http404
+        connection = CalendarConnection.objects.filter(user=request.user, provider=provider.name).first() or \
+            CalendarConnection(user=request.user, provider=provider.name)
+        try:
+            provider.connect_password(
+                connection, request.POST.get('server', ''), request.POST.get('username', '').strip(),
+                request.POST.get('password', ''),
+            )
+        except SyncError as error:
+            messages.error(request, _('{provider} did not connect: {reason}').format(
+                provider=provider.label, reason=error,
+            ))
+            return redirect('plugins:netbox_calendar:my_feed')
+        connection.status = CalendarConnection.STATUS_ACTIVE
+        connection.last_error = ''
+        connection.save()
+        engine.enqueue('sync_one', connection.pk)
+        messages.success(request, _('{provider} is connected. Your events will appear there in a minute or two.').format(
+            provider=provider.label,
+        ))
+        return redirect('plugins:netbox_calendar:my_feed')
+
+
+class SyncCallbackView(ConditionalLoginRequiredMixin, View):
+    """Where the provider sends the browser back after sign-in: store the tokens and start the first sync."""
+
+    def get(self, request, provider):
+        from .sync import engine
+        from .sync.base import SyncError
+
+        if not request.user.is_authenticated:
+            return redirect(f"{reverse('login')}?next={request.path}")
+        provider = _provider_or_404(provider)
+        if not provider.uses_oauth:
+            raise Http404
+        waiting = request.session.pop(_SESSION_KEY, None) or {}
+        back = redirect('plugins:netbox_calendar:my_feed')
+        if request.GET.get('error'):
+            # Declined, or the organization doesn't allow the app yet.
+            messages.error(request, _('{provider} did not connect: {reason}').format(
+                provider=provider.label,
+                reason=request.GET.get('error_description') or request.GET.get('error'),
+            ))
+            return back
+        state = request.GET.get('state', '')
+        if waiting.get('provider') != provider.name or not state or \
+                not secrets.compare_digest(waiting.get('state', ''), state):
+            messages.error(request, _('The sign-in could not be matched to this browser. Try connecting again.'))
+            return back
+        connection = CalendarConnection.objects.filter(user=request.user, provider=provider.name).first() or \
+            CalendarConnection(user=request.user, provider=provider.name)
+        try:
+            provider.finish(connection, request.GET.get('code', ''), sync_redirect_uri(request, provider),
+                            waiting['verifier'])
+        except SyncError as error:
+            messages.error(request, _('{provider} did not connect: {reason}').format(
+                provider=provider.label, reason=error,
+            ))
+            return back
+        connection.status = CalendarConnection.STATUS_ACTIVE
+        connection.last_error = ''
+        connection.save()
+        engine.enqueue('sync_one', connection.pk)
+        messages.success(request, _('{provider} is connected. Your events will appear there in a minute or two.').format(
+            provider=provider.label,
+        ))
+        return back
+
+
+class SyncConnectionView(ConditionalLoginRequiredMixin, View):
+    """
+    Buttons on a connection: Sync now, which events, Disconnect. Users act
+    on their own connections; superusers on anyone's (the admin page).
+    """
+
+    def post(self, request, pk):
+        from .sync import engine
+
+        if not request.user.is_authenticated:
+            raise PermissionDenied
+        connection = get_object_or_404(CalendarConnection, pk=pk)
+        if connection.user_id != request.user.pk and not request.user.is_superuser:
+            raise PermissionDenied
+        action = request.POST.get('action')
+        if action == 'disconnect':
+            remove = request.POST.get('remove_calendar') == 'on'
+            label = connection.provider_label
+            engine.disconnect(connection, remove_calendar=remove)
+            messages.success(request, _('{provider} is disconnected.').format(provider=label))
+        elif action == 'scope' and request.POST.get('scope') in dict(CalendarConnection.SCOPE_CHOICES):
+            connection.scope = request.POST['scope']
+            connection.save(update_fields=('scope',))
+            engine.enqueue('sync_one', connection.pk)
+            messages.success(request, _('Saved. The calendar is being updated.'))
+        elif action == 'sync':
+            if connection.status != CalendarConnection.STATUS_EXPIRED:
+                connection.status = CalendarConnection.STATUS_ACTIVE
+                connection.save(update_fields=('status',))
+            engine.enqueue('sync_one', connection.pk)
+            messages.success(request, _('Sync started. It runs in the background.'))
+        return _back(request)
+
+
+class SyncAdminView(ConditionalLoginRequiredMixin, View):
+    """Calendar -> Calendar Sync, superusers only: setup state and every connected user."""
+
+    def get(self, request):
+        from . import sync
+
+        if not request.user.is_authenticated:
+            return redirect(f"{reverse('login')}?next={request.path}")
+        if not request.user.is_superuser:
+            raise PermissionDenied(_('Only superusers can see calendar sync connections.'))
+        providers = [
+            {
+                'provider': provider,
+                'enabled': provider.is_enabled(),
+                'missing': provider.missing_settings(),
+                'redirect_uri': sync_redirect_uri(request, provider) if provider.uses_oauth else '',
+            }
+            for provider in sync.PROVIDERS.values()
+        ]
+        connections = CalendarConnection.objects.select_related('user').annotate(
+            synced_count=Count('synced'),
+        )
+        return render(request, 'netbox_calendar/sync_admin.html', {
+            'providers': providers, 'connections': connections,
+        })
+
+
+#
 # Settings
 #
 
@@ -890,30 +1107,48 @@ class SettingsView(ConditionalLoginRequiredMixin, View):
             raise PermissionDenied(_('Only superusers can change Calendar settings.'))
         return super().dispatch(request, *args, **kwargs)
 
-    def _render(self, request, form):
+    @staticmethod
+    def _tab(request):
+        """The tab in ?tab=, else the first one."""
+        return plugin_settings.TAB_BY_SLUG.get(request.GET.get('tab'), plugin_settings.TABS[0])
 
+    @staticmethod
+    def _tab_url(tab):
+        return f"{reverse('plugins:netbox_calendar:settings')}?tab={tab.slug}"
+
+    def _render(self, request, tab, form):
         saved = {row.key: row for row in PluginSetting.objects.select_related('updated_by')}
         rows = [
             {'field': form[setting.key], 'source': plugin_settings.source(setting.key), 'saved': saved.get(setting.key)}
-            for setting in plugin_settings.SETTINGS
+            for setting in form.settings
         ]
-        return render(request, 'netbox_calendar/settings.html', {'form': form, 'rows': rows})
+        # Each tab shows how many of its settings are saved here, like the
+        # counts on NetBox's object tabs.
+        tabs = [
+            {'tab': other, 'saved': sum(key in saved for key in other.keys)}
+            for other in plugin_settings.TABS
+        ]
+        return render(request, 'netbox_calendar/settings.html', {
+            'form': form, 'rows': rows, 'tab': tab, 'tabs': tabs,
+        })
 
     def get(self, request):
-        return self._render(request, forms.SettingsForm())
+        tab = self._tab(request)
+        return self._render(request, tab, forms.SettingsForm(keys=tab.keys))
 
     def post(self, request):
+        tab = self._tab(request)
         reset_key = request.POST.get('reset')
         if reset_key in plugin_settings.BY_KEY:
             plugin_settings.reset(reset_key)
             messages.success(request, _('{setting} now follows configuration.py.').format(
                 setting=plugin_settings.BY_KEY[reset_key].label,
             ))
-            return redirect('plugins:netbox_calendar:settings')
-        form = forms.SettingsForm(request.POST)
+            return redirect(self._tab_url(tab))
+        form = forms.SettingsForm(request.POST, keys=tab.keys)
         if not form.is_valid():
-            return self._render(request, form)
+            return self._render(request, tab, form)
         for key, value in form.stored_values().items():
             plugin_settings.save(key, value, user=request.user)
-        messages.success(request, _('Settings saved.'))
-        return redirect('plugins:netbox_calendar:settings')
+        messages.success(request, _('{tab} settings saved.').format(tab=tab.label))
+        return redirect(self._tab_url(tab))

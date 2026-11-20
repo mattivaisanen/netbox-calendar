@@ -128,6 +128,52 @@ SETTINGS = (
         KIND_TEXT,
     ),
     Setting(
+        'outlook_sync', _('Outlook sync'),
+        _('Users can connect their Outlook calendar on the Calendar Feed page, and their events are pushed '
+          'to it. Needs an Entra app registration; see docs/calendar-sync.md.'),
+        KIND_BOOL,
+    ),
+    Setting(
+        'outlook_client_id', _('Outlook client ID'),
+        _('The Application (client) ID of the Entra app registration. Its client secret goes in '
+          "configuration.py as outlook_client_secret."),
+        KIND_TEXT,
+    ),
+    Setting(
+        'outlook_tenant', _('Outlook tenant'),
+        _("Who may connect: your tenant's ID or domain (your organization only), \"organizations\" (any work "
+          'or school account) or "common" (personal Microsoft accounts too). Empty: organizations.'),
+        KIND_TEXT,
+    ),
+    Setting(
+        'google_sync', _('Google Calendar sync'),
+        _('Users can connect their Google Calendar on the Calendar Feed page. Needs a Google Cloud OAuth '
+          'client; see docs/calendar-sync.md.'),
+        KIND_BOOL,
+    ),
+    Setting(
+        'google_client_id', _('Google client ID'),
+        _('The client ID of the Google OAuth client. Its secret goes in configuration.py as '
+          'google_client_secret.'),
+        KIND_TEXT,
+    ),
+    Setting(
+        'caldav_sync', _('CalDAV sync'),
+        _('Users can connect a CalDAV calendar (Nextcloud, Fastmail, iCloud and others) with an app password.'),
+        KIND_BOOL,
+    ),
+    Setting(
+        'caldav_server', _('CalDAV server'),
+        _('The one server users connect to, such as https://cloud.example.com/remote.php/dav. Empty: users '
+          'type the address, and NetBox connects to whatever they give.'),
+        KIND_TEXT,
+    ),
+    Setting(
+        'sync_calendar_name', _('Synced calendar name'),
+        _('The name of the calendar NetBox creates in each connected account. Empty: NetBox.'),
+        KIND_TEXT,
+    ),
+    Setting(
         'message', _('Notification message'),
         _('The text webhooks get as {{ data.message }}, in Jinja2. Variables: ' + VARIABLES + '. '
           'Empty: the default text.'),
@@ -148,6 +194,39 @@ SETTINGS = (
 )
 
 BY_KEY = {setting.key: setting for setting in SETTINGS}
+
+
+@dataclass(frozen=True)
+class Tab:
+    """One tab of the Settings page and the settings it shows."""
+    slug: str
+    label: str
+    keys: tuple
+    #: A line shown above the settings, or empty.
+    intro: str = ''
+
+
+#: The Settings page tabs, in order. Each tab saves only its own settings.
+#: A setting may sit on more than one tab (the synced calendar name is the
+#: same for every sync provider).
+TABS = (
+    Tab('general', _('General'), (
+        'netbox_url', 'first_weekday', 'restrict_editing', 'conflict_warnings', 'freeze_banner',
+        'scope_rollup', 'auto_status', 'change_requests',
+    )),
+    Tab('notifications', _('Notifications'), (
+        'notifications', 'direct_email', 'message', 'email_subject', 'email_body',
+    ), _('Who is notified is set per event type and event role.')),
+    Tab('feed', _('iCal Feed'), ('ical_feeds',)),
+    Tab('outlook', _('Outlook'), ('outlook_sync', 'outlook_client_id', 'outlook_tenant', 'sync_calendar_name'),
+        _('Calendar → Calendar Sync lists what is still missing and who is connected.')),
+    Tab('google', _('Google'), ('google_sync', 'google_client_id', 'sync_calendar_name'),
+        _('Calendar → Calendar Sync lists what is still missing and who is connected.')),
+    Tab('caldav', _('CalDAV'), ('caldav_sync', 'caldav_server', 'sync_calendar_name'),
+        _('Calendar → Calendar Sync lists who is connected.')),
+)
+
+TAB_BY_SLUG = {tab.slug: tab for tab in TABS}
 
 #: Whether the PluginSetting table exists yet (code can run before `migrate`).
 _table_ready = False

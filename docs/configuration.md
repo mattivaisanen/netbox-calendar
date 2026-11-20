@@ -2,7 +2,9 @@
 
 Settings live under `PLUGINS_CONFIG['netbox_calendar']` in NetBox's
 `configuration.py`. All are optional. Superusers can also change every
-setting except `reminder_grace_minutes` on **Calendar → Settings**; see
+setting except `reminder_grace_minutes`, `outlook_client_secret`,
+`google_client_secret`, `outlook_login_url` and `outlook_graph_url` on
+**Calendar → Settings**; see
 [below](#changing-settings-in-netbox).
 
 | Key | Default | Description |
@@ -21,6 +23,17 @@ setting except `reminder_grace_minutes` on **Calendar → Settings**; see
 | `message` | see [notifications.md](notifications.md#the-message) | Jinja2 template of the notice text: `{{ data.message }}` for webhooks. |
 | `email_subject` | see [notifications.md](notifications.md#e-mail-subject-and-body) | Jinja2 template of the direct e-mail subject. |
 | `email_body` | see [notifications.md](notifications.md#e-mail-subject-and-body) | Jinja2 template of the direct e-mail body (plain text). |
+| `outlook_sync` | `False` | Users can connect their Outlook calendar, and their events are pushed to it. See [calendar-sync.md](calendar-sync.md). |
+| `outlook_client_id` | `''` | Application (client) ID of the Entra app registration. |
+| `outlook_client_secret` | `''` | Its client secret. Only in `configuration.py`. |
+| `outlook_tenant` | `'organizations'` | Who may connect: your tenant ID or domain (your organization only), `'organizations'` (any work or school account) or `'common'` (personal Microsoft accounts too). |
+| `google_sync` | `False` | Users can connect their Google Calendar. See [calendar-sync.md](calendar-sync.md#google-calendar-setup). |
+| `google_client_id` | `''` | Client ID of the Google OAuth client. |
+| `google_client_secret` | `''` | Its client secret. Only in `configuration.py`. |
+| `caldav_sync` | `False` | Users can connect a CalDAV calendar (Nextcloud, Fastmail, iCloud, ...) with an app password. See [calendar-sync.md](calendar-sync.md#caldav-setup). |
+| `caldav_server` | `''` | The one CalDAV server users connect to. Empty: users type an address. |
+| `sync_calendar_name` | `'NetBox'` | Name of the calendar NetBox creates in each connected account. |
+| `outlook_login_url`, `outlook_graph_url` | Microsoft's global cloud | For national clouds only. Only in `configuration.py`. |
 | `reminder_grace_minutes` | `60` | How late a reminder, start or end notice may still be sent, for example after the worker was down. Older ones are dropped. Only in `configuration.py`. |
 
 Example:
@@ -37,7 +50,10 @@ PLUGINS_CONFIG = {
 
 ## Changing settings in NetBox
 
-**Calendar → Settings** is shown to superusers only.
+**Calendar → Settings** is shown to superusers only. Its tabs group the
+settings: **General**, **Notifications**, **iCal Feed**, **Outlook**,
+**Google** and **CalDAV**. **Save** stores only the settings of the open
+tab. A number on a tab counts its settings saved on the page.
 
 - A value saved on the page overrides `configuration.py`. Each setting shows
   where its value comes from: *Saved here*, *From configuration.py* or

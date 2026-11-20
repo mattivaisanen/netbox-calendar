@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Calendar → Settings** has tabs: General, Notifications, iCal Feed,
+  Outlook, Google and CalDAV. Each tab saves only its own settings, and
+  shows how many of them are saved here.
+- **Calendar sync.** Users connect their own Outlook, Google Calendar or
+  CalDAV calendar (Nextcloud, Fastmail, iCloud and others) on **Calendar →
+  Calendar Feed**, and NetBox pushes their events into a NetBox calendar
+  there: series with skipped and moved occurrences, kept up to date after
+  every save and every hour. It needs only outbound connections from
+  NetBox, so it works when NetBox is internal. Each service is off by
+  default (`outlook_sync`, `google_sync`, `caldav_sync`); Outlook needs an
+  Entra app registration and Google an OAuth client. See
+  [docs/calendar-sync.md](docs/calendar-sync.md). **Calendar → Calendar
+  Sync** lists connected users for superusers. Run `migrate`.
 - The events list shows upcoming and running events. Past events have
   their own grayed-out **Past events** section below, newest first, with
   **Open as list** for bulk actions. New **Past** filter (`past=true` /

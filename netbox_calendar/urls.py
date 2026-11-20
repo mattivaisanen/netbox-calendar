@@ -10,6 +10,10 @@ urlpatterns = [
     path('feed/', views.MyFeedView.as_view(), name='my_feed'),
     path('feed/<str:token>.ics', views.FeedView.as_view(), name='feed'),
     path('settings/', views.SettingsView.as_view(), name='settings'),
+    path('sync/', views.SyncAdminView.as_view(), name='sync_admin'),
+    path('sync/<int:pk>/', views.SyncConnectionView.as_view(), name='sync_connection'),
+    path('sync/<str:provider>/connect/', views.SyncConnectView.as_view(), name='sync_connect'),
+    path('sync/<str:provider>/callback/', views.SyncCallbackView.as_view(), name='sync_callback'),
 
     path('events/', include(get_model_urls('netbox_calendar', 'event', detail=False))),
     path('events/<int:pk>/', include(get_model_urls('netbox_calendar', 'event'))),

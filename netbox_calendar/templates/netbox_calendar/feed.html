@@ -13,6 +13,100 @@
     {% if not enabled %}
       <div class="alert alert-warning">{% trans "Calendar feeds are turned off on this NetBox." %}</div>
     {% endif %}
+    {% for card in sync_providers %}
+      {% with provider=card.provider connection=card.connection %}
+      <div class="card">
+        <h2 class="card-header"><i class="mdi mdi-{{ provider.icon }}"></i> {{ provider.title }}</h2>
+        <div class="card-body">
+          {% if not card.ready %}
+            <p class="text-secondary mb-0">{% blocktrans with name=provider.label %}{{ name }} sync is turned on but not set up yet. Ask an admin to finish it on Calendar → Calendar Sync.{% endblocktrans %}</p>
+          {% elif not connection %}
+            {% if provider.uses_oauth %}
+              <p>{% blocktrans with name=provider.label %}Connect your {{ name }} account and NetBox puts your events in a calendar of their own there, and keeps them up to date. You sign in with your own account; NetBox only touches that calendar.{% endblocktrans %}</p>
+              <a href="{% url 'plugins:netbox_calendar:sync_connect' provider.name %}" class="btn btn-primary">
+                <i class="mdi mdi-link-variant"></i> {% blocktrans with name=provider.title %}Connect {{ name }}{% endblocktrans %}
+              </a>
+            {% else %}
+              {% include 'netbox_calendar/inc/sync_password_form.html' %}
+            {% endif %}
+          {% else %}
+            <table class="table table-sm attr-table mb-3">
+              {% if connection.server %}
+                <tr>
+                  <th scope="row">{% trans "Server" %}</th>
+                  <td class="text-break">{{ connection.server }}</td>
+                </tr>
+              {% endif %}
+              <tr>
+                <th scope="row">{% trans "Account" %}</th>
+                <td>{{ connection.account|default:"—" }}</td>
+              </tr>
+              <tr>
+                <th scope="row">{% trans "Status" %}</th>
+                <td>
+                  {% if connection.status == 'active' %}
+                    <span class="badge text-bg-green">{{ connection.get_status_display }}</span>
+                  {% elif connection.status == 'expired' %}
+                    <span class="badge text-bg-red">{{ connection.get_status_display }}</span>
+                  {% else %}
+                    <span class="badge text-bg-orange">{{ connection.get_status_display }}</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">{% trans "Last sync" %}</th>
+                <td>{{ connection.last_sync|date:"SHORT_DATETIME_FORMAT"|default:_("Not yet") }}</td>
+              </tr>
+              {% if connection.last_error %}
+                <tr>
+                  <th scope="row">{% trans "Problem" %}</th>
+                  <td class="text-danger small" style="white-space: pre-line">{{ connection.last_error }}</td>
+                </tr>
+              {% endif %}
+            </table>
+            {% if connection.status == 'expired' %}
+              <div class="alert alert-warning">{% trans "NetBox can no longer sign in to this calendar. Connect again to carry on; nothing is lost." %}</div>
+              {% if provider.uses_oauth %}
+                <a href="{% url 'plugins:netbox_calendar:sync_connect' provider.name %}" class="btn btn-primary mb-3">
+                  <i class="mdi mdi-link-variant"></i> {% trans "Connect Again" %}
+                </a>
+              {% else %}
+                <div class="mb-3">{% include 'netbox_calendar/inc/sync_password_form.html' %}</div>
+              {% endif %}
+            {% endif %}
+            <form method="post" action="{% url 'plugins:netbox_calendar:sync_connection' connection.pk %}" class="d-flex flex-wrap align-items-center gap-2 mb-3">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="scope">
+              <label class="form-label mb-0" for="sync-scope-{{ connection.pk }}">{% trans "Events" %}</label>
+              <select name="scope" id="sync-scope-{{ connection.pk }}" class="form-select w-auto">
+                {% for value, label in scope_choices %}
+                  <option value="{{ value }}"{% if connection.scope == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-outline-primary">{% trans "Save" %}</button>
+            </form>
+            <div class="d-flex flex-wrap gap-2">
+              <form method="post" action="{% url 'plugins:netbox_calendar:sync_connection' connection.pk %}">
+                {% csrf_token %}
+                <button type="submit" name="action" value="sync" class="btn btn-outline-secondary"><i class="mdi mdi-sync"></i> {% trans "Sync Now" %}</button>
+              </form>
+              <form method="post" action="{% url 'plugins:netbox_calendar:sync_connection' connection.pk %}" class="d-flex flex-wrap align-items-center gap-2"
+                    onsubmit="return confirm('{% trans "NetBox stops updating this calendar. Continue?" %}');">
+                {% csrf_token %}
+                <button type="submit" name="action" value="disconnect" class="btn btn-outline-danger"><i class="mdi mdi-link-variant-off"></i> {% trans "Disconnect" %}</button>
+                <div class="form-check mb-0">
+                  <input class="form-check-input" type="checkbox" name="remove_calendar" id="sync-remove-{{ connection.pk }}" checked>
+                  <label class="form-check-label" for="sync-remove-{{ connection.pk }}">{% if connection.own_calendar %}{% blocktrans with name=provider.label %}Also delete the NetBox calendar from {{ name }}{% endblocktrans %}{% else %}{% trans "Also delete NetBox's events from the calendar" %}{% endif %}</label>
+                </div>
+              </form>
+            </div>
+          {% endif %}
+          <p class="small text-secondary mt-3 mb-0">{% trans "Changes reach the calendar within a minute or two, and everything is checked again every hour. Edits made there are not sent back to NetBox." %}</p>
+        </div>
+      </div>
+      {% endwith %}
+    {% endfor %}
+
     <div class="card">
       <h2 class="card-header">{% trans "Your Feed Address" %}</h2>
       <div class="card-body">

@@ -24,6 +24,10 @@ EVENT_TYPES = {
     NoticeChoices.ENDED: ('netbox_calendar.ended', _('Event ended'), 'success'),
 }
 
+#: Told to a user whose calendar sync stopped working (sync/engine.py).
+SYNC_FAILED = 'netbox_calendar.sync_failed'
+SYNC_FAILED_TEXT = _('Calendar sync needs attention')
+
 
 class TranslatedEventType(EventType):
     """
@@ -49,3 +53,5 @@ def register():
     for name, text, kind in EVENT_TYPES.values():
         if name not in registry['event_types']:
             TranslatedEventType(name, text, kind=kind).register()
+    if SYNC_FAILED not in registry['event_types']:
+        TranslatedEventType(SYNC_FAILED, SYNC_FAILED_TEXT, kind='danger').register()

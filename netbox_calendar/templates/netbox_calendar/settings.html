@@ -8,13 +8,34 @@
   <div class="text-secondary">{% trans "configuration.py sets each value. A value saved here overrides it until you switch back. Changes apply at once, without a restart." %}</div>
 {% endblock %}
 
+{# One tab per kind of setting, in the same markup as NetBox's object tabs. #}
+{% block tabs %}
+  <ul class="nav nav-tabs" role="tablist">
+    {% for item in tabs %}
+      <li class="nav-item" role="presentation">
+        <a class="nav-link{% if item.tab == tab %} active{% endif %}" href="?tab={{ item.tab.slug }}"
+           {% if item.tab == tab %}aria-current="page"{% endif %}>
+          {{ item.tab.label }}
+          {% if item.saved %}
+            <span class="badge text-bg-primary" title="{% trans 'Saved here' %}">{{ item.saved }}</span>
+          {% endif %}
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}
+
 {% block content %}
 <div class="row">
   <div class="col-12 col-lg-8">
+    {# Posts to this URL, so ?tab= tells the view which settings to save. #}
     <form method="post" class="card">
       {% csrf_token %}
-      <h2 class="card-header">{% trans "Settings" %}</h2>
+      <h2 class="card-header">{{ tab.label }}</h2>
       <div class="card-body">
+        {% if tab.intro %}
+          <p class="text-secondary">{{ tab.intro }}</p>
+        {% endif %}
         {% for row in rows %}
           <div class="mb-4 pb-2{% if not forloop.last %} border-bottom{% endif %}">
             {% render_field row.field %}
