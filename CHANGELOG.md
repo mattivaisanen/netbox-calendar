@@ -101,6 +101,9 @@
 - Users are shown by full name (username when no name is set) on event
   pages, the event list, user pickers and the iCal feed.
 - Removing a person from an event asks for confirmation.
+- Fixed: timeline titles didn't line up when events had event types with
+  names of different lengths. The type column now takes the width of the
+  widest type badge on the page; type names are never cut off.
 
 ## 0.1.1 (2026-11-03)
 
