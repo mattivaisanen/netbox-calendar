@@ -292,6 +292,20 @@ class Event(NetBoxModel):
         return found[0] if found else None
 
 
+def ended_ids(queryset, now=None):
+    """
+    Primary keys of the events in `queryset` that are over: nothing left
+    running or to come. A one-off event is over at its end; a series when
+    it has no occurrence (moved ones included) at or after `now`.
+    """
+    now = now or timezone.now()
+    ended = set(queryset.filter(rrule='', end__lte=now).values_list('pk', flat=True))
+    # Only series whose first occurrence is over can be; check their rule.
+    series = queryset.exclude(rrule='').filter(end__lte=now).prefetch_related('occurrence_changes')
+    ended.update(event.pk for event in series if event.next_occurrence(now) is None)
+    return ended
+
+
 def all_day_bounds(start, end):
     """
     (start, end) of an all-day event: local midnight of the first day, and

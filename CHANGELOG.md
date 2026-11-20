@@ -15,6 +15,11 @@
   Entra app registration and Google an OAuth client. See
   [docs/calendar-sync.md](docs/calendar-sync.md). **Calendar → Calendar
   Sync** lists connected users for superusers. Run `migrate`.
+- The events list shows upcoming and running events. Past events have
+  their own grayed-out **Past events** section below, newest first, with
+  **Open as list** for bulk actions. New **Past** filter (`past=true` /
+  `past=false`), also in the API.
+- Month view: past events are grayed out instead of slightly faded.
 - The event form's objects are rows: *Include* or *Exclude*, a type and
   its objects, with a button to remove each row and **Add** for another.
   Adding or changing a row no longer redraws the form. **Result** under
@@ -109,6 +114,9 @@
 - Users are shown by full name (username when no name is set) on event
   pages, the event list, user pickers and the iCal feed.
 - Removing a person from an event asks for confirmation.
+- Fixed: timeline titles didn't line up when events had event types with
+  names of different lengths. The type column now takes the width of the
+  widest type badge on the page; type names are never cut off.
 
 ## 0.1.1 (2026-11-03)
 

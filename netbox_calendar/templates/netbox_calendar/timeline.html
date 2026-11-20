@@ -23,6 +23,11 @@
 {% block content %}
 {% include 'netbox_calendar/inc/filters.html' with keep=keep_timeline %}
 
+<style>
+  /* Width comes from the script below; until then the column fits its own badge. */
+  .cal-type-col { min-width: var(--cal-type-width, auto); }
+</style>
+
 {% for day, entries in groups %}
   <div class="card mb-2">
     <h2 class="card-header{% if day == today %} text-primary{% endif %}">
@@ -32,8 +37,9 @@
       {% for entry in entries %}
         <a href="{{ entry.url }}" class="list-group-item list-group-item-action{% if entry.is_cancelled %} opacity-50{% endif %}">
           <div class="row align-items-center">
-            <div class="col-auto">
-              <span class="badge" style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};">
+            {# Type column is as wide as the widest type badge on the page (set by the script below) #}
+            <div class="col-auto cal-type-col">
+              <span class="badge cal-type-badge" style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};">
                 {% if entry.icon %}<i class="mdi mdi-{{ entry.icon }}"></i> {% endif %}{{ entry.type_name }}
               </span>
             </div>
@@ -72,4 +78,23 @@
     {% if past %}{% trans "Further back" %}{% else %}{% trans "Further ahead" %}{% endif %}
   </a>
 </div>
+
+<script>
+  // Line up titles across all day cards: every type column gets the width of
+  // the widest one, so type names are never cut off. Runs again once fonts
+  // (the icon font) have loaded, since that can change badge widths.
+  (function () {
+    function alignTypeColumns() {
+      const root = document.documentElement;
+      root.style.removeProperty('--cal-type-width');
+      let widest = 0;
+      document.querySelectorAll('.cal-type-col').forEach(function (col) {
+        widest = Math.max(widest, col.offsetWidth);
+      });
+      if (widest) root.style.setProperty('--cal-type-width', widest + 'px');
+    }
+    alignTypeColumns();
+    window.addEventListener('load', alignTypeColumns);
+  })();
+</script>
 {% endblock %}

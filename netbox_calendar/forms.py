@@ -1058,7 +1058,7 @@ class EventFilterForm(NetBoxModelFilterSetForm):
     fieldsets = (
         FieldSet('q', 'filter_id', 'tag'),
         FieldSet('event_type_id', 'status', 'impact', 'recurring', name=_('Event')),
-        FieldSet('after', 'before', name=_('When')),
+        FieldSet('past', 'after', 'before', name=_('When')),
         FieldSet('owner_id', 'person_id', 'mine', name=_('People')),
     )
     event_type_id = DynamicModelMultipleChoiceField(
@@ -1068,6 +1068,10 @@ class EventFilterForm(NetBoxModelFilterSetForm):
     impact = forms.MultipleChoiceField(choices=ImpactChoices, required=False, label=_('Impact'))
     recurring = forms.NullBooleanField(required=False, label=_('Repeating'), widget=forms.Select(
         choices=(('', '---------'), ('true', _('Yes')), ('false', _('No'))),
+    ))
+    # Empty: the list shows upcoming and running events, and past ones in their own section.
+    past = forms.NullBooleanField(required=False, label=_('Past'), widget=forms.Select(
+        choices=(('', '---------'), ('true', _('Only past events')), ('false', _('Only upcoming and running'))),
     ))
     after = forms.DateTimeField(required=False, label=_('Ends after'), widget=CalendarDateTimePicker())
     before = forms.DateTimeField(required=False, label=_('Starts before'), widget=CalendarDateTimePicker())

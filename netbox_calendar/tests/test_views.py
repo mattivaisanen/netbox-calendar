@@ -53,6 +53,19 @@ class PageTests(TestCase):
         self.assertEqual(plugin_settings.get_setting('first_weekday'), '6')
         self.assertIs(plugin_settings.get_setting('ical_feeds'), False)
 
+    def test_event_list_puts_past_events_in_their_own_section(self):
+        # Over: a one-off yesterday and a series that ended. Not over: the weekly series from setUp.
+        make_event(title='Old swap', hours_from_now=-24)
+        make_event(title='Ended series', hours_from_now=-24 * 30, rrule='FREQ=DAILY;COUNT=2')
+        main = self.client.get(url('event_list'))
+        self.assertContains(main, self.event.title)
+        self.assertNotContains(main, 'Old swap')
+        self.assertContains(main, 'id="nbcal-past-events"')
+        past = self.client.get(url('event_list') + '?past=true&embedded=true', HTTP_HX_REQUEST='true')
+        self.assertContains(past, 'Old swap')
+        self.assertContains(past, 'Ended series')
+        self.assertNotContains(past, self.event.title)
+
     def test_device_page_shows_its_events(self):
         response = self.client.get(reverse('dcim:device', args=[self.device.pk]))
         self.assertContains(response, self.event.title)
