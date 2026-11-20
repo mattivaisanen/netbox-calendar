@@ -4,8 +4,9 @@ from unittest import mock
 
 from django.conf import settings
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
-from ..models import CalendarConnection, OccurrenceChange
+from ..models import CalendarConnection, Event, OccurrenceChange
 from ..sync import engine, tokens
 from ..sync.outlook import OutlookProvider, graph_recurrence
 from .utils import make_event, make_user
@@ -83,12 +84,11 @@ class OutlookSyncTests(TestCase):
         )
 
     def test_recurrence(self):
-        event = make_event(self.user, rrule='FREQ=MONTHLY;BYDAY=2TU')
-        start = event.start
-        while start.weekday() != 1 or not 8 <= start.day <= 14:
-            start += timedelta(days=1)
-        event.start, event.end = start, start + timedelta(hours=1)
-        event.save()
+        # The 2nd Tuesday of a month, 10:00 local time.
+        local = timezone.localtime().replace(hour=10, minute=0, second=0, microsecond=0)
+        while local.weekday() != 1 or not 8 <= local.day <= 14:
+            local += timedelta(days=1)
+        event = Event(start=local, end=local + timedelta(hours=1), rrule='FREQ=MONTHLY;BYDAY=2TU')
         self.assertEqual(graph_recurrence(event)['pattern'], {
             'type': 'relativeMonthly', 'interval': 1, 'daysOfWeek': ['tuesday'], 'index': 'second',
         })
@@ -109,12 +109,11 @@ class OutlookSyncTests(TestCase):
         self.assertEqual([c for c in self.graph.calls[calls:] if c[0] != 'GET'], [])
 
         # A new title is patched in place; cancelling removes it.
-        event.title = 'Core upgrade v2'
-        event.save()
+        # update(): no signals, so an approval plugin can't hold the edit back.
+        Event.objects.filter(pk=event.pk).update(title='Core upgrade v2')
         engine.sync_connection(self.connection)
         self.assertEqual(list(self.graph.events.values())[0]['subject'], 'Core upgrade v2')
-        event.status = 'cancelled'
-        event.save()
+        Event.objects.filter(pk=event.pk).update(status='cancelled')
         engine.sync_connection(self.connection)
         self.assertEqual(self.graph.events, {})
 
