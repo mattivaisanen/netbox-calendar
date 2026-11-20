@@ -7,7 +7,9 @@ link to any NetBox object) and EventPerson (a user, user group or contact
 on an event, with a role) and OccurrenceChange (one occurrence of a series
 skipped or moved, with a reason) are change-logged, their entries shown
 under the event.
-FeedToken, SentNotice and PluginSetting are plain bookkeeping.
+FeedToken, SentNotice and PluginSetting are plain bookkeeping, and so are
+CalendarConnection and SyncedEvent (a user's link to an outside calendar
+and what was pushed there; see sync/).
 """
 from datetime import datetime, time, timedelta
 
@@ -552,3 +554,89 @@ class PluginSetting(models.Model):
 
     def __str__(self):
         return self.key
+
+
+class CalendarConnection(models.Model):
+    """
+    A user's link to an outside calendar (Outlook, ...), which NetBox
+    pushes their events to. Tokens are stored encrypted (sync/tokens.py).
+    See sync/ for how events get there.
+    """
+    STATUS_ACTIVE = 'active'
+    STATUS_EXPIRED = 'expired'
+    STATUS_ERROR = 'error'
+    STATUS_CHOICES = (
+        (STATUS_ACTIVE, _('Active')),
+        (STATUS_EXPIRED, _('Sign-in expired')),
+        (STATUS_ERROR, _('Error')),
+    )
+    #: Which events are pushed.
+    SCOPE_MINE = 'mine'
+    SCOPE_ALL = 'all'
+    SCOPE_CHOICES = (
+        (SCOPE_MINE, _('Events I own or am on')),
+        (SCOPE_ALL, _('All events I can see')),
+    )
+
+    user = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='+')
+    provider = models.CharField(verbose_name=_('provider'), max_length=30)
+    # The outside account, such as the mailbox address, for showing.
+    account = models.CharField(verbose_name=_('account'), max_length=255, blank=True)
+    # The calendar in that account that holds NetBox's events.
+    calendar_id = models.CharField(max_length=500, blank=True)
+    scope = models.CharField(verbose_name=_('events'), max_length=10, choices=SCOPE_CHOICES, default=SCOPE_MINE)
+    # Encrypted (sync/tokens.py).
+    refresh_token = models.TextField(blank=True)
+    access_token = models.TextField(blank=True)
+    access_expires = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(verbose_name=_('status'), max_length=10, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    last_sync = models.DateTimeField(verbose_name=_('last sync'), blank=True, null=True)
+    last_error = models.TextField(verbose_name=_('last error'), blank=True)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('user__username', 'provider')
+        constraints = (
+            models.UniqueConstraint(fields=('user', 'provider'), name='netbox_calendar_connection_unique'),
+        )
+
+    def __str__(self):
+        return f'{display_name(self.user)}: {self.provider_label}'
+
+    @property
+    def provider_label(self):
+        from .sync import get_provider  # Not at the top: sync imports this module.
+        provider = get_provider(self.provider)
+        return provider.label if provider else self.provider
+
+    @property
+    def is_active(self):
+        return self.status == self.STATUS_ACTIVE
+
+    def get_absolute_url(self):
+        return reverse('plugins:netbox_calendar:my_feed')
+
+
+class SyncedEvent(models.Model):
+    """
+    One event as pushed to a connection's calendar: the outside id, and a
+    fingerprint of what was sent, so an unchanged event is not sent again.
+    `event_id` is a plain number, not a foreign key, so the row outlives a
+    deleted event until its outside copy is deleted too.
+    """
+    connection = models.ForeignKey(to=CalendarConnection, on_delete=models.CASCADE, related_name='synced')
+    event_id = models.PositiveBigIntegerField()
+    remote_id = models.CharField(max_length=500, blank=True)
+    # Provider bookkeeping, such as the ids of single occurrences.
+    extra = models.JSONField(default=dict, blank=True)
+    fingerprint = models.CharField(max_length=64, blank=True)
+    synced = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('connection', 'event_id')
+        constraints = (
+            models.UniqueConstraint(fields=('connection', 'event_id'), name='netbox_calendar_synced_unique'),
+        )
+
+    def __str__(self):
+        return f'{self.connection}: event {self.event_id}'

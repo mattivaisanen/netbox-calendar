@@ -49,6 +49,11 @@ menu = PluginMenu(
                 permissions=['netbox_calendar.view_eventrole'],
             ),
             PluginMenuItem(
+                link='plugins:netbox_calendar:sync_admin',
+                link_text=_('Calendar Sync'),
+                staff_only=True,  # superusers only
+            ),
+            PluginMenuItem(
                 link='plugins:netbox_calendar:settings',
                 link_text=_('Settings'),
                 staff_only=True,  # superusers only

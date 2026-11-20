@@ -13,7 +13,7 @@ class NetBoxCalendarConfig(PluginConfig):
     verbose_name = 'Calendar'
     description = (
         'Schedule upgrades, downtime, maintenance and other events on NetBox objects, '
-        'with calendar views, reminders and an iCal feed.'
+        'with calendar views, reminders, an iCal feed and Outlook sync.'
     )
     version = '0.1.1'
     author = 'Matti'
@@ -22,7 +22,8 @@ class NetBoxCalendarConfig(PluginConfig):
     min_version = '4.7.0'
 
     # Every key can also be changed on Calendar -> Settings (superusers),
-    # except reminder_grace_minutes. See plugin_settings.py.
+    # except reminder_grace_minutes and the outlook_* keys marked
+    # "configuration.py only". See plugin_settings.py.
     default_settings = {
         # NetBox's address as users reach it (e.g. 'https://netbox.example.com'),
         # for full links in notifications, e-mails and the iCal feed. Empty:
@@ -64,6 +65,23 @@ class NetBoxCalendarConfig(PluginConfig):
         # A reminder or start notice the background job missed (worker
         # stopped, say) is still sent this many minutes late, never later.
         'reminder_grace_minutes': 60,
+
+        # Calendar sync (docs/calendar-sync.md): users connect their own
+        # Outlook calendar and NetBox pushes their events into it.
+        'outlook_sync': False,
+        # The Entra app registration: Application (client) ID, and a client
+        # secret (configuration.py only, never shown in NetBox).
+        'outlook_client_id': '',
+        'outlook_client_secret': '',
+        # Who may sign in: 'organizations' (any work account), your tenant's
+        # ID or domain (only your organization), or 'common' (personal
+        # Microsoft accounts too).
+        'outlook_tenant': 'organizations',
+        # National clouds only; configuration.py only.
+        'outlook_login_url': 'https://login.microsoftonline.com',
+        'outlook_graph_url': 'https://graph.microsoft.com/v1.0',
+        # Name of the calendar NetBox creates in each user's mailbox.
+        'sync_calendar_name': 'NetBox',
     }
 
     template_extensions = 'template_content.template_extensions'
@@ -73,7 +91,7 @@ class NetBoxCalendarConfig(PluginConfig):
         super().ready()
 
         from . import signals, widgets  # noqa: F401 (connects receivers, registers the widget)
-        from . import jobs  # noqa: F401 (registers the reminder job)
+        from . import jobs  # noqa: F401 (registers the reminder and sync jobs)
 
 
 # Before ready(): see event_types.py.

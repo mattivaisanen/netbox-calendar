@@ -128,6 +128,29 @@ SETTINGS = (
         KIND_TEXT,
     ),
     Setting(
+        'outlook_sync', _('Outlook sync'),
+        _('Users can connect their Outlook calendar on the Calendar Feed page, and their events are pushed '
+          'to it. Needs an Entra app registration; see docs/calendar-sync.md.'),
+        KIND_BOOL,
+    ),
+    Setting(
+        'outlook_client_id', _('Outlook client ID'),
+        _('The Application (client) ID of the Entra app registration. Its client secret goes in '
+          "configuration.py as outlook_client_secret."),
+        KIND_TEXT,
+    ),
+    Setting(
+        'outlook_tenant', _('Outlook tenant'),
+        _("Who may connect: your tenant's ID or domain (your organization only), \"organizations\" (any work "
+          'or school account) or "common" (personal Microsoft accounts too). Empty: organizations.'),
+        KIND_TEXT,
+    ),
+    Setting(
+        'sync_calendar_name', _('Synced calendar name'),
+        _('The name of the calendar NetBox creates in each connected account. Empty: NetBox.'),
+        KIND_TEXT,
+    ),
+    Setting(
         'message', _('Notification message'),
         _('The text webhooks get as {{ data.message }}, in Jinja2. Variables: ' + VARIABLES + '. '
           'Empty: the default text.'),

@@ -251,6 +251,10 @@ rather than deleting it, so people are told; deleting notifies nobody.
   without a NetBox login, so keep it private; **Reset Address** replaces it.
   Add filters to the address to narrow it, as on the event list:
   `?impact=outage`, `?mine=true`, `?event_type=upgrade&status=confirmed`.
+- **Outlook sync** (Calendar → Calendar Feed, when an admin has set it
+  up): **Connect Outlook Calendar** puts your events in a NetBox calendar
+  in your mailbox and keeps it up to date. It works when NetBox is only
+  reachable inside your network. See [calendar-sync.md](calendar-sync.md).
 - **One event:** **Add to Calendar** on the event page downloads it as an
   `.ics` file.
 - **E-mail invites:** with direct e-mail on, notices arrive with the event
@@ -276,7 +280,8 @@ download the feed. Check that:
 
 Classic Outlook for Windows and Apple Calendar download the feed from your
 computer, so an internal address works there. If NetBox must stay internal,
-use one of those, or the per-event `.ics` download.
+use one of those, [Outlook sync](calendar-sync.md), or the per-event `.ics`
+download.
 
 ## Change requests from netbox-change-approval
 

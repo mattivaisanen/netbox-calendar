@@ -13,6 +13,10 @@ Skipping, moving or bringing back one occurrence (OccurrenceChange) is
 event's journal gets an entry saying the same.
 
 Deleting an event sends nothing: cancel it instead so people hear.
+
+Any change to an event, its links, people or occurrences also queues a
+push to connected outside calendars (sync/), once per transaction, after
+the commit.
 """
 import logging
 import threading
@@ -177,3 +181,71 @@ def occurrence_restored(sender, instance, **kwargs):
     info = notifications.occurrence_info(instance, notifications.RESTORED, instance._changelog_message or '')
     _journal(event, info, _actor())
     queue(event.pk, NoticeChoices.CHANGED, info)
+
+
+#
+# Calendar sync
+#
+
+def _sync_pending():
+    if not hasattr(_state, 'sync'):
+        _state.sync = set()
+    return _state.sync
+
+
+def _sync_registered():
+    connection = transaction.get_connection()
+    return connection.in_atomic_block and any(
+        getattr(item[1], 'calendar_sync', False) for item in connection.run_on_commit
+    )
+
+
+def queue_sync(pk):
+    """Push event `pk` to connected calendars once the transaction commits."""
+    from .sync import any_enabled
+
+    if not any_enabled():
+        return
+    pending = _sync_pending()
+    if not _sync_registered():
+        # Anything left over is from a rolled back transaction.
+        pending.clear()
+        callback = partial(_send_sync)
+        callback.calendar_sync = True
+        transaction.on_commit(callback)
+    pending.add(pk)
+
+
+def _send_sync():
+    pending = _sync_pending()
+    event_ids = sorted(pending)
+    pending.clear()
+    if not event_ids:
+        return
+    from .models import CalendarConnection
+    from .sync import engine
+
+    if not CalendarConnection.objects.exists():
+        return
+    try:
+        engine.enqueue('sync_events', event_ids)
+    except Exception:
+        logger.exception('Queueing the calendar sync of events %s failed', event_ids)
+
+
+@receiver(post_save, sender=Event)
+@receiver(post_delete, sender=Event)
+def event_sync(sender, instance, raw=False, **kwargs):
+    if not raw:
+        queue_sync(instance.pk)
+
+
+@receiver(post_save, sender=EventObject)
+@receiver(post_save, sender=EventPerson)
+@receiver(post_save, sender=OccurrenceChange)
+@receiver(post_delete, sender=EventObject)
+@receiver(post_delete, sender=EventPerson)
+@receiver(post_delete, sender=OccurrenceChange)
+def part_sync(sender, instance, raw=False, **kwargs):
+    if not raw:
+        queue_sync(instance.event_id)

@@ -12,8 +12,9 @@ events repeat, how notices are sent or who may edit.
 - **No dependency on other plugins.** The netbox-change-approval
   integration reads its model through `apps.get_model()` when it is
   installed, and never imports it.
-- **No extra packages** beyond `python-dateutil`, which NetBox already
-  installs. The iCal output is written by hand (`ical.py`).
+- **No extra packages** beyond what NetBox already installs:
+  `python-dateutil`, and `requests` and `cryptography` for calendar sync.
+  The iCal output is written by hand (`ical.py`).
 
 ## Module map
 
@@ -30,6 +31,7 @@ events repeat, how notices are sent or who may edit.
 | `notifications.py` | Recipients, the event data, and the three channels: bell, Event Rules, direct e-mail. |
 | `message_template.py` | The Jinja2 templates of the webhook message and the e-mail subject and body, rendered in a sandbox. |
 | `ical.py` | RFC 5545 output: feed, `.ics` download and e-mail invites, with a generated `VTIMEZONE`. |
+| `sync/` | Calendar sync: `engine.py` (which events go where, fingerprints, errors, jobs), `outlook.py` (Graph sign-in, tokens, event and recurrence mapping), `base.py` (the provider interface), `tokens.py` (token encryption). |
 | `plugin_settings.py` | Settings superusers change in NetBox, layered over `configuration.py`. |
 | `integrations.py` | netbox-change-approval's scheduled change requests on the calendar. |
 | `template_content.py` | The Events card and running banner on object pages, the change freeze badge, and **Schedule Event** above object lists. |
@@ -137,6 +139,36 @@ renders any `owner` field in its own *Ownership* section.
 for its user, and the events are `restrict()`ed to what that user may
 view. The event list's filterset runs on the query string, so any list
 filter works on a feed. `ical_feeds` off makes every feed a 404.
+
+## Calendar sync
+
+`CalendarConnection` is one user's link to an outside calendar;
+`SyncedEvent` is one event as pushed there, with the provider's id and a
+fingerprint of what was sent. `SyncedEvent.event_id` is a plain number so
+the row outlives a deleted event until its outside copy is removed.
+
+- **Providers** (`sync/base.Provider`) sign the user in (authorization
+  code with PKCE), keep tokens fresh, and `push()` / `remove()` one event.
+  `sync.PROVIDERS` lists them; adding Google or CalDAV means one more
+  class there.
+- **The engine** (`sync/engine.py`) builds the wanted set per connection
+  (`events_for()`), compares each `fingerprint()` with the stored one, and
+  pushes or removes the difference. A cache lock keeps two workers off one
+  connection. `AuthExpired` marks the connection expired and sends one
+  bell notification (`netbox_calendar.sync_failed`); other errors are kept
+  in `last_error` and tried again.
+- **Triggers:** `signals.queue_sync()` collects the events saved in a
+  transaction and enqueues one `sync_events` RQ job on commit;
+  `CalendarSyncJob` (hourly) runs `sync_all()`.
+- **Outlook** (`sync/outlook.py`): `payload()` turns an event into plain
+  data; `graph_recurrence()` maps the RRULE to a Graph
+  `patternedRecurrence`, or returns None and the occurrences are sent as
+  single events. A change to the time, the rule or a skipped or moved
+  occurrence recreates the series (Graph's exception handling on a changed series is
+  not reliable enough to patch); a change to the text patches it.
+  `transactionId` stops duplicate creates when a job is retried.
+- `_http()` is the only method that touches the network; tests replace it
+  with a fake Graph (`tests/test_sync.py`).
 
 ## The targeting rule
 

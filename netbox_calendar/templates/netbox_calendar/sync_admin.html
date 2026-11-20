@@ -1,0 +1,105 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Calendar Sync" %}{% endblock %}
+
+{% block subtitle %}
+  <div class="text-secondary">{% trans "Users connect their own calendars on the Calendar Feed page. Here you see who is connected and set things up." %}</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    {% for row in providers %}
+      <div class="card">
+        <h2 class="card-header"><i class="mdi mdi-{{ row.provider.icon }}"></i> {% blocktrans with name=row.provider.label %}{{ name }} Setup{% endblocktrans %}</h2>
+        <div class="card-body">
+          <table class="table table-sm attr-table mb-0">
+            <tr>
+              <th scope="row">{% trans "Turned on" %}</th>
+              <td>
+                {% if row.enabled %}<span class="badge text-bg-green">{% trans "Yes" %}</span>
+                {% else %}<span class="badge text-bg-secondary">{% trans "No" %}</span> <span class="small text-secondary">{% trans "Calendar → Settings" %}</span>{% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">{% trans "Missing settings" %}</th>
+              <td>
+                {% for key in row.missing %}<code>{{ key }}</code>{% if not forloop.last %}, {% endif %}{% empty %}<span class="badge text-bg-green">{% trans "None" %}</span>{% endfor %}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">{% trans "Redirect URI" %}</th>
+              <td>
+                <div class="input-group">
+                  <input type="text" class="form-control font-monospace" id="redirect-{{ row.provider.name }}" value="{{ row.redirect_uri }}" readonly>
+                  <button class="btn btn-outline-secondary copy-content" data-clipboard-target="#redirect-{{ row.provider.name }}" type="button" title="{% trans 'Copy' %}">
+                    <i class="mdi mdi-content-copy"></i>
+                  </button>
+                </div>
+                <div class="small text-secondary mt-1">{% trans "Add exactly this address to the app registration, as a Web redirect URI. Set the NetBox address in Calendar → Settings so it doesn't depend on how you opened this page." %}</div>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+
+    <div class="card">
+      <h2 class="card-header">{% trans "Connected Users" %}</h2>
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th>{% trans "User" %}</th>
+              <th>{% trans "Calendar" %}</th>
+              <th>{% trans "Account" %}</th>
+              <th>{% trans "Events" %}</th>
+              <th>{% trans "Status" %}</th>
+              <th>{% trans "Last sync" %}</th>
+              <th>{% trans "Synced" %}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for connection in connections %}
+              <tr>
+                <td>{{ connection.user.get_full_name|default:connection.user.username }}</td>
+                <td>{{ connection.provider_label }}</td>
+                <td>{{ connection.account|default:"—" }}</td>
+                <td>{{ connection.get_scope_display }}</td>
+                <td>
+                  {% if connection.status == 'active' %}<span class="badge text-bg-green">{{ connection.get_status_display }}</span>
+                  {% elif connection.status == 'expired' %}<span class="badge text-bg-red">{{ connection.get_status_display }}</span>
+                  {% else %}<span class="badge text-bg-orange" title="{{ connection.last_error }}">{{ connection.get_status_display }}</span>{% endif %}
+                </td>
+                <td>{{ connection.last_sync|date:"SHORT_DATETIME_FORMAT"|default:"—" }}</td>
+                <td>{{ connection.synced_count }}</td>
+                <td class="text-end text-nowrap">
+                  <form method="post" action="{% url 'plugins:netbox_calendar:sync_connection' connection.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="return_url" value="{{ request.path }}">
+                    <button type="submit" name="action" value="sync" class="btn btn-sm btn-outline-secondary" title="{% trans 'Re-sync' %}"><i class="mdi mdi-sync"></i> {% trans "Re-sync" %}</button>
+                  </form>
+                  <form method="post" action="{% url 'plugins:netbox_calendar:sync_connection' connection.pk %}" class="d-inline"
+                        onsubmit="return confirm('{% trans "Disconnect this user? Their NetBox calendar is deleted from their account." %}');">
+                    {% csrf_token %}
+                    <input type="hidden" name="return_url" value="{{ request.path }}">
+                    <input type="hidden" name="remove_calendar" value="on">
+                    <button type="submit" name="action" value="disconnect" class="btn btn-sm btn-outline-danger" title="{% trans 'Disconnect' %}"><i class="mdi mdi-link-variant-off"></i> {% trans "Disconnect" %}</button>
+                  </form>
+                </td>
+              </tr>
+              {% if connection.last_error %}
+                <tr><td colspan="8" class="small text-danger border-top-0 pt-0" style="white-space: pre-line">{{ connection.last_error }}</td></tr>
+              {% endif %}
+            {% empty %}
+              <tr><td colspan="8" class="text-secondary">{% trans "Nobody has connected a calendar yet." %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
