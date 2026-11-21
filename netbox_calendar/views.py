@@ -816,11 +816,15 @@ class TimelineView(ConditionalLoginRequiredMixin, View):
 #
 
 def feed_token(user, reset=False):
-    """The user's feed token, made on first use or when reset."""
+    """
+    The user's feed token (a FeedToken), made on first use, when reset, or
+    when the stored one can't be read any more (SECRET_KEY changed).
+    """
     token = FeedToken.objects.filter(user=user).first()
-    if token is None or reset:
-        value = secrets.token_urlsafe(32)
-        token, _created = FeedToken.objects.update_or_create(user=user, defaults={'token': value})
+    if token is None or reset or not token.token:
+        token = token or FeedToken(user=user)
+        token.set_token(secrets.token_urlsafe(32))
+        token.save()
     return token
 
 
@@ -863,7 +867,7 @@ class FeedView(View):
     def get(self, request, token):
         if not plugin_settings.on('ical_feeds'):
             raise Http404
-        found = FeedToken.objects.filter(token=token).select_related('user').first()
+        found = FeedToken.find(token)
         if found is None or not found.user.is_active:
             raise Http404
         user = found.user

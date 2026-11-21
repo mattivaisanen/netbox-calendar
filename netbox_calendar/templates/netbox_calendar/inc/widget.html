@@ -17,7 +17,7 @@
           </span>
           <span class="text-nowrap">
             {% if entry.is_running %}<span class="badge text-bg-orange me-1">{% trans "Now" %}</span>{% endif %}
-            <span class="text-muted">{% if entry.all_day %}{{ entry.start|date:"D j M" }}{% else %}{{ entry.start|date:"D j M H:i" }}{% endif %}</span>
+            <span class="text-muted">{% if entry.all_day %}{{ entry.start|date:"SHORT_DATE_FORMAT" }}{% else %}{{ entry.start|date:"SHORT_DATETIME_FORMAT" }}{% endif %}</span>
           </span>
         </div>
       </a>

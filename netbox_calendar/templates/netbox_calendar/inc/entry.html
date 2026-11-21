@@ -4,6 +4,6 @@
    style="background-color: #{{ entry.color }}; color: {{ entry.color|fgcolor }};"
    title="{{ entry.type_name }}: {{ entry.title }}{% if entry.status_label %} ({{ entry.status_label }}){% endif %}">
   {% if entry.icon %}<i class="mdi mdi-{{ entry.icon }}"></i>{% endif %}
-  {% if not entry.all_day %}<span class="fw-bold">{{ entry.start|date:"H:i" }}</span>{% endif %}
+  {% if not entry.all_day %}<span class="fw-bold">{{ entry.start|time:"TIME_FORMAT" }}</span>{% endif %}
   {{ entry.title }}
 </a>

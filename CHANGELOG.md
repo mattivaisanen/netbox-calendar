@@ -19,6 +19,13 @@
   the old key is in `SECRET_KEY_FALLBACKS`.
 - Errors reading netbox-change-approval's change requests are logged
   instead of ignored.
+- iCal feed tokens are no longer stored in clear text: a feed is found by
+  the token's hash, and the token is kept encrypted to show the address.
+  Existing feed addresses keep working. Run `migrate`.
+- Dates and times on the calendar pages use NetBox's named formats
+  (`SHORT_DATETIME_FORMAT`, `SHORT_DATE_FORMAT`, `TIME_FORMAT`), so
+  per-user date formats apply.
+- The change freeze badge loads only freeze events that can be running.
 - **Calendar → Settings** has tabs: General, Notifications, iCal Feed,
   Outlook, Google and CalDAV. Each tab saves only its own settings, and
   shows how many of them are saved here.
