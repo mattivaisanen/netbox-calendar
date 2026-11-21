@@ -19,8 +19,8 @@
             {% if entry.is_running %}<span class="badge text-bg-orange">{% trans "Running" %}</span>{% endif %}
           </div>
           <div class="small text-secondary">
-            {% if entry.all_day %}{{ entry.start|date:"D j M Y" }}{% if entry.last_day != entry.start.date %} – {{ entry.last_day|date:"D j M" }}{% endif %}
-            {% else %}{{ entry.start|date:"D j M Y H:i" }} – {{ entry.end|date:"H:i" }}{% endif %}
+            {% if entry.all_day %}{{ entry.start|date:"SHORT_DATE_FORMAT" }}{% if entry.last_day != entry.start.date %} – {{ entry.last_day|date:"SHORT_DATE_FORMAT" }}{% endif %}
+            {% else %}{{ entry.start|date:"SHORT_DATETIME_FORMAT" }} – {{ entry.end|time:"TIME_FORMAT" }}{% endif %}
           </div>
         </a>
       {% endfor %}

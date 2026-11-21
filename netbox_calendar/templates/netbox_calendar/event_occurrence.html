@@ -2,7 +2,7 @@
 {% load form_helpers %}
 {% load i18n %}
 
-{% block title %}{% blocktrans with event=object when=original_start|date:"D j M Y H:i" %}{{ event }}: occurrence of {{ when }}{% endblocktrans %}{% endblock %}
+{% block title %}{% blocktrans with event=object when=original_start|date:"SHORT_DATETIME_FORMAT" %}{{ event }}: occurrence of {{ when }}{% endblocktrans %}{% endblock %}
 
 {% block content %}
 <form method="post" class="form-object-edit mt-3">

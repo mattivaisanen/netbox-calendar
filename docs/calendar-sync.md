@@ -164,9 +164,11 @@ Turn on **CalDAV sync** on **Calendar → Settings** (`caldav_sync`). There
 is nothing to register.
 
 - **CalDAV server** (`caldav_server`) empty: each user types their
-  server's address. NetBox then connects to whatever address a user gives,
-  including hosts inside your network, so leave it empty only when you
-  trust your NetBox users with that.
+  server's address, which must be on one of the **CalDAV allowed hosts**
+  (`caldav_allowed_hosts`, such as `dav.example.net, .example.org`). Only
+  `https://` is accepted, and redirects to other hosts are refused, so
+  users can't point NetBox at an address of their choosing. With both
+  settings empty, CalDAV can't be used.
 - **CalDAV server** set, such as your company's Nextcloud
   `https://cloud.corp.internal/remote.php/dav`: users only give their user
   name and app password.
@@ -273,7 +275,7 @@ Outlook:
 
 | Shown | Meaning and fix |
 |---|---|
-| *Sign-in expired* | The refresh token stopped working. Causes: a password reset, a revoked session, a Conditional Access change, more than 90 days without a sync, or a changed NetBox `SECRET_KEY`. The user gets a bell notification and presses **Connect Again**. |
+| *Sign-in expired* | The refresh token stopped working. Causes: a password reset, a revoked session, a Conditional Access change, more than 90 days without a sync, or a changed NetBox `SECRET_KEY` without the old one in `SECRET_KEY_FALLBACKS`. The user gets a bell notification and presses **Connect Again**. |
 | *AADSTS50011* during sign-in | The redirect URI doesn't match the app registration. Copy it again from **Calendar → Calendar Sync**. |
 | *AADSTS65001* or *Need admin approval* | Users may not consent to apps in your tenant. Grant admin consent (step 4). |
 | *MailboxNotEnabledForRESTAPI* | The account has no Exchange Online mailbox (no licence). Use an account with a mailbox. |
@@ -297,8 +299,13 @@ Google and CalDAV:
 ## Security
 
 - Tokens are stored encrypted with a key derived from NetBox's
-  `SECRET_KEY`. Changing the key makes them unreadable, and users connect
-  again.
+  `SECRET_KEY`. To rotate the key, move the old one to
+  `SECRET_KEY_FALLBACKS`: stored tokens stay readable. A key that is
+  simply replaced makes them unreadable, and users connect again.
+- Each calendar entry names only the linked objects its user may view in
+  NetBox; the others are counted ("2 other objects").
+- CalDAV answers are parsed with `defusedxml`, which NetBox's own
+  dependencies install. Without it, CalDAV sync stays off.
 - Client secrets are read from `configuration.py` only. CalDAV app
   passwords are stored encrypted like tokens.
 - OAuth sign-in uses the authorization code flow with PKCE and a

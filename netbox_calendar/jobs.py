@@ -12,13 +12,21 @@ The second, hourly: a full push to every connected outside calendar
 moves the window of rules sent as single events.
 """
 import logging
+import uuid
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
-from . import notifications
+from core.choices import ObjectChangeActionChoices
+from core.events import OBJECT_UPDATED
+from extras.events import enqueue_event, flush_events
+from netbox.jobs import JobRunner, system_job
+from utilities.request import NetBoxFakeRequest
+
+from . import integrations, notifications
 from .choices import EventStatusChoices, NoticeChoices
 from .models import Event, EventType, SentNotice
 from .plugin_settings import get_setting, on
@@ -36,16 +44,59 @@ def _grace():
         return timedelta(minutes=60)
 
 
+#: The name the change log shows for status changes this job makes.
+SYSTEM_NAME = 'netbox-calendar'
+
+
 def update_statuses(now):
-    """Single events move to in progress at their start and done at their end."""
+    """
+    Single events move to in progress at their start and done at their end.
+    Each event is saved on its own, so the change shows in its change log,
+    Event Rules and webhooks see it, and connected calendars get it.
+    """
     if not on('auto_status'):
         return 0
-    single = Event.objects.filter(rrule='')
+    single = Event.objects.filter(rrule='').exclude(pk__in=integrations.all_awaiting_approval())
     started = single.filter(
         status__in=(EventStatusChoices.PLANNED, EventStatusChoices.CONFIRMED), start__lte=now, end__gt=now,
-    ).update(status=EventStatusChoices.IN_PROGRESS)
-    ended = single.filter(status__in=EventStatusChoices.ACTIVE, end__lte=now).update(status=EventStatusChoices.DONE)
-    return started + ended
+    )
+    ended = single.filter(status__in=EventStatusChoices.ACTIVE, end__lte=now)
+    changes = [(event, EventStatusChoices.IN_PROGRESS) for event in started]
+    changes += [(event, EventStatusChoices.DONE) for event in ended]
+    if not changes:
+        return 0
+
+    request = NetBoxFakeRequest({
+        'id': uuid.uuid4(), 'user': None, 'path': '', 'path_info': '', 'method': '', 'GET': {}, 'META': {},
+    })
+    queue = {}
+    count = 0
+    for event, status in changes:
+        try:
+            with transaction.atomic():
+                _set_status(event, status, request, queue)
+            count += 1
+        except Exception:
+            logger.exception('Automatic status of event #%s failed', event.pk)
+    try:
+        flush_events(list(queue.values()))
+    except Exception:
+        logger.exception('Event rules for automatic status changes failed')
+    return count
+
+
+def _set_status(event, status, request, queue):
+    """Save `status` on `event` with a change log entry, and queue its "updated" event for Event Rules."""
+    event.snapshot()
+    event.status = status
+    event._changelog_message = _('Status set automatically')
+    event.save()
+    # Without a signed-in user NetBox writes no change log itself: write it here, under SYSTEM_NAME.
+    change = event.to_objectchange(ObjectChangeActionChoices.ACTION_UPDATE)
+    change.user_name = SYSTEM_NAME
+    change.request_id = request.id
+    change.save()
+    enqueue_event(queue, event, request, OBJECT_UPDATED)
 
 
 def _longest_reminder():
@@ -91,7 +142,10 @@ def send_notices(now=None):
     grace = _grace()
     update_statuses(now)
     ahead = timedelta(minutes=_longest_reminder())
-    events = Event.objects.exclude(status=EventStatusChoices.CANCELLED).filter(
+    # Events waiting for approval in netbox-change-approval send nothing yet.
+    events = Event.objects.exclude(status=EventStatusChoices.CANCELLED).exclude(
+        pk__in=integrations.all_awaiting_approval(),
+    ).filter(
         Q(rrule__gt='') | Q(start__lte=now + ahead, end__gte=now - grace),
     ).select_related('event_type', 'event_owner').prefetch_related('occurrence_changes')
     sent = 0
@@ -106,31 +160,25 @@ def send_notices(now=None):
     return sent
 
 
-try:
-    from netbox.jobs import JobRunner, system_job
-except ImportError:  # pragma: no cover
-    JobRunner = system_job = None
+@system_job(interval=5)
+class CalendarNoticesJob(JobRunner):
+    class Meta:
+        name = 'Calendar reminders and notices'
 
-if system_job is not None:
-    @system_job(interval=5)
-    class CalendarNoticesJob(JobRunner):
-        class Meta:
-            name = 'Calendar reminders and notices'
-
-        def run(self, *args, **kwargs):
-            count = send_notices()
-            self.logger.info(f'Sent {count} calendar notice(s).')
+    def run(self, *args, **kwargs):
+        count = send_notices()
+        self.logger.info(f'Sent {count} calendar notice(s).')
 
 
-    @system_job(interval=60)
-    class CalendarSyncJob(JobRunner):
-        class Meta:
-            name = 'Calendar sync'
+@system_job(interval=60)
+class CalendarSyncJob(JobRunner):
+    class Meta:
+        name = 'Calendar sync'
 
-        def run(self, *args, **kwargs):
-            from .sync import any_enabled, engine
+    def run(self, *args, **kwargs):
+        from .sync import any_enabled, engine
 
-            if not any_enabled():
-                return
-            count = engine.sync_all()
-            self.logger.info(f'Synced {count} calendar connection(s).')
+        if not any_enabled():
+            return
+        count = engine.sync_all()
+        self.logger.info(f'Synced {count} calendar connection(s).')

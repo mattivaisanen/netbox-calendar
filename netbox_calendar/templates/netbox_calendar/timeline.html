@@ -31,7 +31,7 @@
 {% for day, entries in groups %}
   <div class="card mb-2">
     <h2 class="card-header{% if day == today %} text-primary{% endif %}">
-      {{ day|date:"l j F Y" }}{% if day == today %} · {% trans "Today" %}{% endif %}
+      {{ day|date:"l" }}, {{ day|date:"DATE_FORMAT" }}{% if day == today %} · {% trans "Today" %}{% endif %}
     </h2>
     <div class="list-group list-group-flush">
       {% for entry in entries %}
@@ -45,9 +45,9 @@
             </div>
             <div class="col-2 text-secondary small text-nowrap">
               {% if entry.all_day %}
-                {% trans "All day" %}{% if entry.last_day != day %} – {{ entry.last_day|date:"j M" }}{% endif %}
+                {% trans "All day" %}{% if entry.last_day != day %} – {{ entry.last_day|date:"SHORT_DATE_FORMAT" }}{% endif %}
               {% else %}
-                {{ entry.start|date:"H:i" }} – {% if entry.end|date:"Ymd" != entry.start|date:"Ymd" %}{{ entry.end|date:"j M H:i" }}{% else %}{{ entry.end|date:"H:i" }}{% endif %}
+                {{ entry.start|time:"TIME_FORMAT" }} – {% if entry.end|date:"Ymd" != entry.start|date:"Ymd" %}{{ entry.end|date:"SHORT_DATETIME_FORMAT" }}{% else %}{{ entry.end|time:"TIME_FORMAT" }}{% endif %}
               {% endif %}
             </div>
             <div class="col">

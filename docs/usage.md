@@ -251,7 +251,8 @@ rather than deleting it, so people are told; deleting notifies nobody.
 
 - **Your feed** (Calendar → Calendar Feed): a personal address to subscribe
   to in Outlook, Google Calendar, Apple Calendar or on a phone. It holds
-  the events you may view and updates when they change. The address works
+  the events you may view and updates when they change. Each entry names
+  only the objects you may view. The address works
   without a NetBox login, so keep it private; **Reset Address** replaces it.
   Add filters to the address to narrow it, as on the event list:
   `?impact=outage`, `?mine=true`, `?event_type=upgrade&status=confirmed`.

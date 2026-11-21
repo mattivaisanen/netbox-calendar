@@ -71,11 +71,11 @@
           {% for occurrence in upcoming %}
             <tr>
               <td>
-                {{ occurrence.start|date:"D j M Y H:i" }}
+                {{ occurrence.start|date:"SHORT_DATETIME_FORMAT" }}
                 {% if occurrence.is_moved %}
                   <span class="badge text-bg-warning">{% trans "moved" %}</span>
                   <div class="small text-secondary">
-                    {% blocktrans with original=occurrence.original_start|date:"D j M Y H:i" %}From {{ original }}{% endblocktrans %}:
+                    {% blocktrans with original=occurrence.original_start|date:"SHORT_DATETIME_FORMAT" %}From {{ original }}{% endblocktrans %}:
                     {{ occurrence.change.reason }}
                   </div>
                 {% endif %}
@@ -102,14 +102,14 @@
             {% for change, active in occurrence_changes %}
               <tr{% if not active %} class="text-secondary"{% endif %}>
                 <td class="text-nowrap">
-                  {% if change.is_skipped %}<s>{{ change.original_start|date:"D j M Y H:i" }}</s>{% else %}{{ change.original_start|date:"D j M Y H:i" }}{% endif %}
+                  {% if change.is_skipped %}<s>{{ change.original_start|date:"SHORT_DATETIME_FORMAT" }}</s>{% else %}{{ change.original_start|date:"SHORT_DATETIME_FORMAT" }}{% endif %}
                 </td>
                 <td>
                   {% if change.is_skipped %}
                     <span class="badge text-bg-secondary">{% trans "skipped" %}</span>
                   {% else %}
                     <span class="badge text-bg-warning">{% trans "moved" %}</span>
-                    {% if object.all_day %}{{ change.start|date:"D j M Y" }}{% else %}{{ change.start|date:"D j M Y H:i" }} - {{ change.end|date:"H:i" }}{% endif %}
+                    {% if object.all_day %}{{ change.start|date:"SHORT_DATE_FORMAT" }}{% else %}{{ change.start|date:"SHORT_DATETIME_FORMAT" }} - {{ change.end|time:"TIME_FORMAT" }}{% endif %}
                   {% endif %}
                   <div class="small">{{ change.reason }}</div>
                   {% if not active %}<div class="small">{% trans "No longer in the series: the event's time or recurrence changed." %}</div>{% endif %}

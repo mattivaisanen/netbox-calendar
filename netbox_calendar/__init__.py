@@ -87,9 +87,11 @@ class NetBoxCalendarConfig(PluginConfig):
         'google_client_secret': '',
         # CalDAV (Nextcloud, Fastmail, iCloud, ...): users connect with an app
         # password. caldav_server fixes the server address for everyone;
-        # empty lets users type one.
+        # empty lets users type one on a host in caldav_allowed_hosts
+        # (comma separated, ".example.org" for every host under it).
         'caldav_sync': False,
         'caldav_server': '',
+        'caldav_allowed_hosts': '',
         # Name of the calendar NetBox creates in each connected account.
         'sync_calendar_name': 'NetBox',
     }
@@ -102,6 +104,9 @@ class NetBoxCalendarConfig(PluginConfig):
 
         from . import signals, widgets  # noqa: F401 (connects receivers, registers the widget)
         from . import jobs  # noqa: F401 (registers the reminder and sync jobs)
+        from .integrations import watch_change_requests
+
+        watch_change_requests()
 
 
 # Before ready(): see event_types.py.

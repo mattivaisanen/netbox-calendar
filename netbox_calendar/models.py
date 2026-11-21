@@ -11,6 +11,7 @@ FeedToken, SentNotice and PluginSetting are plain bookkeeping, and so are
 CalendarConnection and SyncedEvent (a user's link to an outside calendar
 and what was pushed there; see sync/).
 """
+import hashlib
 from datetime import datetime, time, timedelta
 
 from django.conf import settings
@@ -520,14 +521,45 @@ class OccurrenceChange(ChangeLoggedModel):
         return objectchange
 
 
+def feed_token_hash(value):
+    """The SHA-256 of a feed token, as stored and looked up (FeedToken.token_hash)."""
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
 class FeedToken(models.Model):
-    """The secret in a user's iCal feed URL. Resetting it makes a new one."""
+    """
+    The secret in a user's iCal feed URL. Resetting it makes a new one.
+
+    Not kept in clear text: a feed is found by the token's hash, and the
+    token itself is stored encrypted (sync/tokens.py, a key from
+    SECRET_KEY), only so the Calendar Feed page can show the address again.
+    A copy of the database alone gives no working feed address.
+    """
     user = models.OneToOneField(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='+')
-    token = models.CharField(max_length=64, unique=True)
+    token_hash = models.CharField(max_length=64, unique=True)
+    token_encrypted = models.TextField()
     created = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f'Feed of {self.user}'
+
+    @property
+    def token(self):
+        """The token in clear text, or '' when it can't be read (SECRET_KEY changed)."""
+        from .sync import tokens
+
+        return tokens.decrypt(self.token_encrypted)
+
+    def set_token(self, value):
+        from .sync import tokens
+
+        self.token_hash = feed_token_hash(value)
+        self.token_encrypted = tokens.encrypt(value)
+
+    @classmethod
+    def find(cls, value):
+        """The FeedToken of `value` (from a feed URL), or None."""
+        return cls.objects.filter(token_hash=feed_token_hash(value)).select_related('user').first()
 
 
 class SentNotice(models.Model):

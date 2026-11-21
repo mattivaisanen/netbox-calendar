@@ -2,10 +2,12 @@
 Which events go to whose calendar, and sending only what changed.
 
 For each connection: the events its user may view (only those they own or
-are on, unless they chose all), not cancelled, and not over for more than
-PAST. Each one's fingerprint is compared with the one stored when it was
-last pushed (SyncedEvent), so an unchanged event costs nothing. Events
-that dropped out (deleted, cancelled, permission gone) are removed.
+are on, unless they chose all), not cancelled, not waiting for approval in
+netbox-change-approval, and not over for more than PAST. Each one's
+fingerprint is compared with the one stored when it was last pushed
+(SyncedEvent), so an unchanged event costs nothing. Events that dropped
+out (deleted, cancelled, permission gone) are removed. Entries name only
+the objects the connection's user may view (base.viewer).
 
 A sign-in that stopped working marks the connection "Sign-in expired" and
 tells the user once, by bell notification. Other errors are kept on the
@@ -23,12 +25,12 @@ from django.utils import timezone
 from core.models import ObjectType
 from extras.models import Notification
 
-from .. import recurrence
+from .. import integrations, recurrence
 from ..choices import EventStatusChoices
 from ..event_types import SYNC_FAILED
 from ..models import CalendarConnection, Event, SyncedEvent, involving
 from . import get_provider
-from .base import AuthExpired, SyncError
+from .base import AuthExpired, SyncError, viewer
 
 logger = logging.getLogger('netbox_calendar.sync')
 
@@ -44,7 +46,9 @@ def events_for(connection, now=None):
     """The events that belong in the connection's calendar."""
     user = connection.user
     since = (now or timezone.now()) - PAST
-    queryset = Event.objects.restrict(user, 'view').exclude(status=EventStatusChoices.CANCELLED)
+    queryset = Event.objects.restrict(user, 'view').exclude(status=EventStatusChoices.CANCELLED).exclude(
+        pk__in=integrations.all_awaiting_approval(),
+    )
     if connection.scope == CalendarConnection.SCOPE_MINE:
         queryset = queryset.filter(involving(user))
     queryset = queryset.filter(Q(end__gte=since) | ~Q(rrule='')).distinct().select_related(
@@ -97,6 +101,15 @@ def sync_connection(connection, event_ids=None):
 
 
 def _sync(provider, connection, event_ids):
+    # Entries name only the objects this connection's user may view.
+    token = viewer.set(connection.user)
+    try:
+        return _sync_as_viewer(provider, connection, event_ids)
+    finally:
+        viewer.reset(token)
+
+
+def _sync_as_viewer(provider, connection, event_ids):
     errors, pushed, removed = [], 0, 0
     try:
         if provider.prepare(connection):

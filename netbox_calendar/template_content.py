@@ -11,6 +11,7 @@ What the plugin adds to other NetBox pages:
 from datetime import timedelta
 
 from django.contrib.contenttypes.models import ContentType
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 
@@ -111,7 +112,11 @@ class FreezeBadge(PluginTemplateExtension):
 
         def compute():
             now = timezone.now()
-            events = Event.objects.filter(event_type__change_freeze=True).exclude(status='cancelled')
+            # Only what can be running now: single events around this moment,
+            # series that have started. Runs on every page, so kept small.
+            events = Event.objects.filter(event_type__change_freeze=True, start__lte=now).exclude(
+                status='cancelled',
+            ).filter(Q(rrule='', end__gt=now) | ~Q(rrule=''))
             return agenda.event_entries(events, now, now + timedelta(seconds=1))
 
         running = _memo(request, 'freeze', compute)

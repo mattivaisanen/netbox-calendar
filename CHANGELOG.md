@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- With netbox-change-approval, a new event waiting for approval sends no
+  notices or reminders, stays out of iCal feeds and is not pushed to
+  connected calendars. People hear it was scheduled once it is approved.
+- iCal feeds, synced calendars, the event page and e-mail name only the
+  linked objects the reader may view; the rest are counted. The REST API
+  accepts the same object types as the event form, and only objects the
+  caller may view.
+- Automatic status changes (in progress, done) are saved one by one: they
+  show in the change log as `netbox-calendar`, run Event Rules and
+  webhooks, and reach connected calendars.
+- CalDAV connects only to `caldav_server` or a host in the new
+  `caldav_allowed_hosts` setting, over https, redirects included. Answers
+  are parsed with `defusedxml` only.
+- Calendar sync tokens stay readable after a `SECRET_KEY` rotation when
+  the old key is in `SECRET_KEY_FALLBACKS`.
+- Errors reading netbox-change-approval's change requests are logged
+  instead of ignored.
+- iCal feed tokens are no longer stored in clear text: a feed is found by
+  the token's hash, and the token is kept encrypted to show the address.
+  Existing feed addresses keep working. Run `migrate`.
+- Dates and times on the calendar pages use NetBox's named formats
+  (`SHORT_DATETIME_FORMAT`, `SHORT_DATE_FORMAT`, `TIME_FORMAT`), so
+  per-user date formats apply.
+- The change freeze badge loads only freeze events that can be running.
+- `pyproject.toml` declares no dependencies: NetBox brings them all.
 - **Calendar → Settings** has tabs: General, Notifications, iCal Feed,
   Outlook, Google and CalDAV. Each tab saves only its own settings, and
   shows how many of them are saved here.

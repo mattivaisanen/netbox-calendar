@@ -359,13 +359,17 @@ class FeedTests(TestCase):
         self.user = make_user('reader')
         grant(self.user, ['view'])
         self.event = make_event(owner=self.user)
-        self.token = FeedToken.objects.create(user=self.user, token='a' * 40)
+        self.token = FeedToken(user=self.user)
+        self.token.set_token('a' * 40)
+        self.token.save()
 
     def test_feed_needs_no_login(self):
         response = self.client.get(url('feed', self.token.token))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'text/calendar; charset=utf-8')
         self.assertContains(response, f'SUMMARY:{self.event.title}')
+        # The token is not stored in clear text.
+        self.assertNotIn(self.token.token, str(FeedToken.objects.values().get(user=self.user)))
 
     def test_feed_holds_only_what_the_user_may_view(self):
         self.user.object_permissions.all().delete()

@@ -17,6 +17,10 @@ Deleting an event sends nothing: cancel it instead so people hear.
 Any change to an event, its links, people or occurrences also queues a
 push to connected outside calendars (sync/), once per transaction, after
 the commit.
+
+A new event waiting for approval in netbox-change-approval is held back:
+no notices and no push until its create request is approved
+(integrations.py), when it is told as "scheduled".
 """
 import logging
 import threading
@@ -29,7 +33,7 @@ from django.dispatch import receiver
 from extras.choices import JournalEntryKindChoices
 from extras.models import JournalEntry
 
-from . import notifications
+from . import integrations, notifications
 from .choices import EventStatusChoices, NoticeChoices
 from .models import Event, EventObject, EventPerson, OccurrenceChange
 
@@ -74,11 +78,12 @@ def _registered(pk):
     return any(getattr(item[1], 'calendar_event', None) == pk for item in connection.run_on_commit)
 
 
-def queue(pk, kind, occurrence=None):
+def queue(pk, kind, occurrence=None, actor=None):
     """
     Send notice `kind` about event `pk` when the transaction commits.
     `occurrence` (notifications.occurrence_info()) names one occurrence
-    that changed; the last one in a transaction is told.
+    that changed; the last one in a transaction is told. `actor`, who
+    made the change, defaults to the signed-in user.
     """
     pending = _pending()
     registered = _registered(pk)
@@ -92,7 +97,7 @@ def queue(pk, kind, occurrence=None):
         return
     pending[pk] = kind
     if not registered:
-        callback = partial(_send, pk, _actor())
+        callback = partial(_send, pk, actor or _actor())
         callback.calendar_event = pk
         transaction.on_commit(callback)
 
@@ -103,7 +108,8 @@ def _send(pk, actor):
     if kind is None:
         return
     event = Event.objects.filter(pk=pk).select_related('event_type', 'event_owner').first()
-    if event is None:
+    if event is None or integrations.awaiting_approval([pk]):
+        # Deleted since, or waiting for approval: told once approved, if ever.
         return
     try:
         notifications.notify(
@@ -218,7 +224,8 @@ def queue_sync(pk):
 
 def _send_sync():
     pending = _sync_pending()
-    event_ids = sorted(pending)
+    # Events waiting for approval are pushed once approved.
+    event_ids = sorted(set(pending) - integrations.awaiting_approval(pending))
     pending.clear()
     if not event_ids:
         return

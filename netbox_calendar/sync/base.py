@@ -4,6 +4,7 @@ removing one event. engine.py calls these; it never talks to a service
 directly.
 """
 import base64
+import contextvars
 import hashlib
 import json
 
@@ -44,9 +45,19 @@ def id_token_claims(id_token):
         return {}
 
 
+#: The user whose calendar is being synced (set by engine._sync()). Calendar
+#: entries name only the objects that user may view.
+viewer = contextvars.ContextVar('netbox_calendar_sync_viewer', default=None)
+
+
+def concerns_text(event):
+    """What the event concerns, in words, as the user being synced may see it."""
+    return describe(event, user=viewer.get())
+
+
 def event_text(event):
     """(location, description) every provider shows for an event: what it concerns, and the details."""
-    objects_text = describe(event)
+    objects_text = concerns_text(event)
     link = absolute_url(event.get_absolute_url())
     text = '\n\n'.join(part for part in (
         event.description,
