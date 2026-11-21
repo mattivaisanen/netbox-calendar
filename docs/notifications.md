@@ -120,7 +120,7 @@ Available in body templates as `{{ data.<field> }}` and in conditions:
 | `reminder_minutes` | `120` for a reminder two hours ahead, else `null` |
 | `occurrence` | for one occurrence skipped, moved or brought back: `{"action": "moved", "original_start": "...", "start": "...", "end": "...", "reason": "...", "text": "..."}` (`action` is `skipped`, `moved` or `restored`), else `null` |
 | `link`, `url` | the event's full address (with `netbox_url`), and its path |
-| `objects_text` | what the event concerns, in words: `Device role: Access, and Location: Floor 2. Except: Location: Lab` |
+| `objects_text` | what the event concerns, in words: `Device role: Access, and Location: Floor 2. Except: Location: Lab`. All objects are named here, as the webhook has no single reader; feeds, synced calendars and e-mail name only what their reader may view |
 | `objects` | included objects: `[{"type": "dcim.device", "id": 7, "name": "agg-3", "link": "..."}]` |
 | `excluded` | excluded objects, each like `objects` |
 | `devices` | affected devices (at most 50), each like `objects` |
@@ -181,8 +181,10 @@ contact without an e-mail address is skipped. A failed send is logged as
 an error by the `netbox_calendar.notifications` logger; reminders, starts
 and ends are sent by the background worker, so check its log too.
 
-Each notice is one e-mail to all its recipients, with the event attached
-as `event.ics`. Outlook and most mail
+Each notice is one e-mail to its recipients, with the event attached
+as `event.ics`. The *Concerns* text names only objects the reader may view
+in NetBox and counts the rest ("2 other objects"), so readers who see
+different objects get separate copies. Contacts get the full text. Outlook and most mail
 programs show it as a meeting invite that can be added to the calendar;
 a cancelled event arrives as a cancellation that removes it. The event's
 owner is the organizer.

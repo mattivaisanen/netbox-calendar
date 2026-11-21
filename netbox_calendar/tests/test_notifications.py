@@ -5,7 +5,7 @@ from unittest import mock
 from django.core import mail
 from django.test import TestCase
 
-from core.models import ObjectType
+from core.models import ObjectChange, ObjectType
 from extras.models import EventRule, Notification, Webhook
 from tenancy.models import Contact
 from users.models import Group
@@ -214,6 +214,9 @@ class ReminderJobTests(TestCase):
         self.assertEqual(notify.call_args.args[1], NoticeChoices.STARTED)
         event.refresh_from_db()
         self.assertEqual(event.status, EventStatusChoices.IN_PROGRESS)
+        # Saved with a change log entry, though no one is signed in.
+        change = ObjectChange.objects.get(changed_object_id=event.pk, user_name=jobs.SYSTEM_NAME)
+        self.assertEqual(change.postchange_data['status'], EventStatusChoices.IN_PROGRESS)
 
     def test_reminder_missed_by_more_than_the_grace_is_dropped(self):
         event = make_event(owner=make_user('owner'), hours_from_now=5, reminders=[240])

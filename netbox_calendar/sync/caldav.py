@@ -10,6 +10,13 @@ is one. Each event is one .ics resource there, written by ical.py the same
 as the feed: a series with EXDATEs for skipped occurrences and
 RECURRENCE-ID overrides for moved ones, so nothing is lost on the way.
 
+Which servers NetBox talks to is the admin's choice: the one server in
+`caldav_server`, or the hosts in `caldav_allowed_hosts`. Every request,
+redirects included, is checked against that (allowed_url()), and plain
+http:// is used only when the admin's own server address says so. So a
+user cannot make NetBox send their password, or anything else, to a host
+of their choosing.
+
 Stored on CalendarConnection: `server` the address the user gave,
 `account` the user name, `refresh_token` the encrypted app password,
 `calendar_id` the calendar's URL, `own_calendar` whether NetBox made it.
@@ -30,10 +37,11 @@ from . import tokens
 from .base import AuthExpired, NotFound, Provider, SyncError, digest
 
 try:
-    # Answers come from servers users name: parse them safely when NetBox has defusedxml (it usually does).
+    # Answers come from outside servers: parsed only with defusedxml (NetBox's
+    # dependencies bring it). Without it CalDAV sync stays off (missing_settings()).
     from defusedxml import ElementTree
 except ImportError:  # pragma: no cover
-    from xml.etree import ElementTree
+    ElementTree = None
 
 logger = logging.getLogger('netbox_calendar.sync')
 
@@ -68,9 +76,9 @@ def ics(event):
 
 
 def ical_describe(event):
-    from ..lookup import describe
+    from .base import concerns_text
 
-    return describe(event)
+    return concerns_text(event)
 
 
 def _without_stamp(text):
@@ -89,10 +97,47 @@ class CalDAVProvider(Provider):
         return on('caldav_sync')
 
     def missing_settings(self):
-        return []
+        missing = []
+        if ElementTree is None:
+            missing.append('defusedxml (Python package)')
+        if not self.fixed_server() and not self.allowed_hosts():
+            missing.append('caldav_server or caldav_allowed_hosts')
+        return missing
 
     def fixed_server(self):
         return (get_setting('caldav_server') or '').strip()
+
+    def allowed_hosts(self):
+        """
+        The hosts users may connect to, lower case: the fixed server's and
+        those in caldav_allowed_hosts. ".example.com" allows every host under example.com.
+        """
+        hosts = [host.strip().lower() for host in re.split(r'[\s,]+', get_setting('caldav_allowed_hosts') or '')]
+        fixed = urlparse(self.fixed_server()).hostname
+        if fixed:
+            hosts.append(fixed.lower())
+        return [host for host in hosts if host]
+
+    def allowed_url(self, url):
+        """
+        Whether NetBox may send a request (with the user's password) to
+        `url`: https:// to an allowed host, or http:// only on the host of an
+        http:// address the admin set as caldav_server.
+        """
+        parsed = urlparse(url)
+        host = (parsed.hostname or '').lower()
+        if not host:
+            return False
+        if parsed.scheme == 'http':
+            fixed = urlparse(self.fixed_server())
+            if fixed.scheme != 'http' or (fixed.hostname or '').lower() != host:
+                return False
+        elif parsed.scheme != 'https':
+            return False
+        for allowed in self.allowed_hosts():
+            if host == allowed or (allowed.startswith('.') and host.endswith(allowed)):
+                return True
+        return False
 
     # HTTP (WebDAV methods, raw bodies)
 
@@ -104,6 +149,9 @@ class CalDAVProvider(Provider):
         """
         auth = (connection.account, password if password is not None else tokens.decrypt(connection.refresh_token))
         for _hop in range(MAX_REDIRECTS):
+            # Checked on every hop: a redirect must not lead the password elsewhere.
+            if not self.allowed_url(url):
+                raise SyncError(f'{url} is not an allowed CalDAV server. Ask an administrator.')
             try:
                 response = requests.request(
                     method, url, data=body.encode() if isinstance(body, str) else body, headers=headers or {},
@@ -191,6 +239,8 @@ class CalDAVProvider(Provider):
         server = (self.fixed_server() or server or '').strip()
         if not server.startswith(('https://', 'http://')):
             raise SyncError('Give the server address, starting with https://.')
+        if not self.allowed_url(server):
+            raise SyncError('NetBox may not connect to this server. Ask an administrator to allow it.')
         if not username or not password:
             raise SyncError('Give the user name and the app password.')
         connection.server = server[:500]

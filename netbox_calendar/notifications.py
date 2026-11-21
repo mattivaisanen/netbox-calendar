@@ -326,6 +326,12 @@ def send_email(event, data, context, users, contacts):
     calendar invite (a cancelled event as a cancellation), so it lands in
     Outlook as a meeting. Subject and body come from their own templates
     (email_subject, email_body), not the webhook message.
+
+    What the event concerns is written per reader: a NetBox user's e-mail
+    names only objects they may view (lookup.describe()). Readers who see
+    the same text share one message. Contacts have no NetBox account; they
+    get the text as it is in the webhook data, as they were put on the event
+    or on one of its objects on purpose.
     """
     addresses = [(display_name(user), user.email) for user in users if user.email]
     addresses += list(contacts)
@@ -335,20 +341,31 @@ def send_email(event, data, context, users, contacts):
     organizer = None
     if event.event_owner is not None and event.event_owner.email:
         organizer = (display_name(event.event_owner), event.event_owner.email)
-    invite = ical.calendar(
-        [event], name=event.title, method=method, attendees=addresses, organizer=organizer,
-        describe=lambda _event: data['objects_text'],
-    )
-    subject = message_template.render(get_setting('email_subject'), context, message_template.EMAIL_SUBJECT)
-    # A header must be one line.
-    subject = ' '.join(subject.split())[:250]
-    body = message_template.render(get_setting('email_body'), context, message_template.EMAIL_BODY)
-    message = EmailMultiAlternatives(
-        subject=subject, body=body, from_email=settings.SERVER_EMAIL,
-        to=[email for _name, email in addresses],
-    )
-    message.attach('event.ics', invite, f'text/calendar; method={method}; charset=UTF-8')
-    try:
-        message.send()
-    except Exception:
-        logger.exception('E-mail about event #%s could not be sent', event.pk)
+
+    # {objects text: [(name, e-mail)]}, in the order of `addresses`.
+    groups = {}
+    targets = Targets(event)
+    for user in users:
+        if user.email:
+            groups.setdefault(describe(event, targets, user=user), []).append((display_name(user), user.email))
+    for name, email in contacts:
+        groups.setdefault(data['objects_text'], []).append((name, email))
+
+    for objects_text, to in groups.items():
+        reader_context = {**context, 'objects': objects_text}
+        invite = ical.calendar(
+            [event], name=event.title, method=method, attendees=addresses, organizer=organizer,
+            describe=lambda _event, text=objects_text: text,
+        )
+        subject = message_template.render(get_setting('email_subject'), reader_context, message_template.EMAIL_SUBJECT)
+        # A header must be one line.
+        subject = ' '.join(subject.split())[:250]
+        body = message_template.render(get_setting('email_body'), reader_context, message_template.EMAIL_BODY)
+        message = EmailMultiAlternatives(
+            subject=subject, body=body, from_email=settings.SERVER_EMAIL, to=[email for _name, email in to],
+        )
+        message.attach('event.ics', invite, f'text/calendar; method={method}; charset=UTF-8')
+        try:
+            message.send()
+        except Exception:
+            logger.exception('E-mail about event #%s could not be sent', event.pk)

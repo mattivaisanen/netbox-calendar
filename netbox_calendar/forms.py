@@ -5,13 +5,11 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 from django.utils import timezone
 from django.utils.formats import date_format
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext
 
-from core.models import ObjectType
 from netbox.forms import (
     NetBoxModelBulkEditForm, NetBoxModelFilterSetForm, NetBoxModelForm, NetBoxModelImportForm,
 )
@@ -28,7 +26,7 @@ from utilities.forms.widgets import DatePicker, DateTimePicker, HTMXSelect
 
 from . import plugin_settings, recurrence
 from .choices import EventStatusChoices, ImpactChoices, NoticeChoices
-from .lookup import DEVICE_MATCHES, EXCLUDABLE
+from .lookup import DEVICE_MATCHES, EXCLUDABLE, linkable_types  # noqa: F401 (linkable_types used by others too)
 from .models import Event, EventObject, EventPerson, EventRole, EventType, OccurrenceChange, display_name
 
 User = get_user_model()
@@ -304,17 +302,6 @@ def reminder_other_field():
         required=False, label=_('Other times'),
         help_text=_('Any other times before the start, such as "3d, 45m" (w, d, h, m).'),
     )
-
-
-def linkable_types():
-    """
-    Object types events can be linked to: NetBox objects, this plugin's own
-    left out, and tags (a condition on devices and VMs).
-    """
-    linkable = ObjectType.objects.with_feature('bookmarks').exclude(app_label='netbox_calendar').values('pk')
-    return ContentType.objects.filter(
-        Q(pk__in=linkable) | Q(app_label='extras', model='tag'),
-    ).order_by('app_label', 'model')
 
 
 #: Included or excluded objects, in the event form's field names.

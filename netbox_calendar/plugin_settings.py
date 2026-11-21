@@ -164,8 +164,15 @@ SETTINGS = (
     ),
     Setting(
         'caldav_server', _('CalDAV server'),
-        _('The one server users connect to, such as https://cloud.example.com/remote.php/dav. Empty: users '
-          'type the address, and NetBox connects to whatever they give.'),
+        _('The one server users connect to, such as https://dav.example.net/remote.php/dav. Empty: users '
+          'type the address of a server on one of the allowed hosts.'),
+        KIND_TEXT,
+    ),
+    Setting(
+        'caldav_allowed_hosts', _('CalDAV allowed hosts'),
+        _('Host names users may connect to when no server is set, separated by commas, such as '
+          'dav.example.net, .example.org (every host under example.org). Only https:// is allowed. Empty with '
+          'no server set: CalDAV cannot be used.'),
         KIND_TEXT,
     ),
     Setting(
@@ -222,7 +229,7 @@ TABS = (
         _('Calendar → Calendar Sync lists what is still missing and who is connected.')),
     Tab('google', _('Google'), ('google_sync', 'google_client_id', 'sync_calendar_name'),
         _('Calendar → Calendar Sync lists what is still missing and who is connected.')),
-    Tab('caldav', _('CalDAV'), ('caldav_sync', 'caldav_server', 'sync_calendar_name'),
+    Tab('caldav', _('CalDAV'), ('caldav_sync', 'caldav_server', 'caldav_allowed_hosts', 'sync_calendar_name'),
         _('Calendar → Calendar Sync lists who is connected.')),
 )
 

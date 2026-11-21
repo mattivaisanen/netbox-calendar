@@ -9,8 +9,13 @@ from tenancy.api.serializers import ContactSerializer
 from users.api.serializers import GroupSerializer, UserSerializer
 
 from ..choices import EventStatusChoices, ImpactChoices, NoticeChoices
-from ..lookup import EXCLUDABLE
+from ..lookup import EXCLUDABLE, linkable_types
 from ..models import Event, EventObject, EventPerson, EventRole, EventType, OccurrenceChange
+
+
+def linkable_object_types():
+    """The object types an event may link to or filter by: the same as in the event form."""
+    return ObjectType.objects.filter(pk__in=linkable_types().values('pk'))
 
 
 class EventTypeSerializer(NetBoxModelSerializer):
@@ -43,7 +48,7 @@ class EventSerializer(NetBoxModelSerializer):
     status = ChoiceField(choices=EventStatusChoices, required=False)
     impact = ChoiceField(choices=ImpactChoices, required=False)
     event_owner = UserSerializer(nested=True, required=False, allow_null=True)
-    filter_object_type = ContentTypeField(queryset=ObjectType.objects.all(), required=False, allow_null=True)
+    filter_object_type = ContentTypeField(queryset=linkable_object_types(), required=False, allow_null=True)
     recurrence = serializers.SerializerMethodField(read_only=True)
     links = serializers.SerializerMethodField(read_only=True)
     occurrence_changes = serializers.SerializerMethodField(read_only=True)
@@ -80,7 +85,7 @@ class EventSerializer(NetBoxModelSerializer):
 class EventObjectSerializer(ChangeLogMessageSerializer, ValidatedModelSerializer):
     """An event's link to one NetBox object."""
     event = EventSerializer(nested=True)
-    object_type = ContentTypeField(queryset=ObjectType.objects.all())
+    object_type = ContentTypeField(queryset=linkable_object_types())
     object = GFKSerializerField(read_only=True)
 
     class Meta:
@@ -95,7 +100,12 @@ class EventObjectSerializer(ChangeLogMessageSerializer, ValidatedModelSerializer
         object_id = data.get('object_id') or getattr(self.instance, 'object_id', None)
         if content_type is not None:
             model = ContentType.objects.get_for_id(content_type.pk).model_class()
-            if model is None or not model.objects.filter(pk=object_id).exists():
+            found = model.objects.filter(pk=object_id) if model is not None else None
+            request = self.context.get('request')
+            if found is not None and request is not None and hasattr(found, 'restrict'):
+                # Only objects the caller may view, as in the event form.
+                found = found.restrict(request.user, 'view')
+            if found is None or not found.exists():
                 raise serializers.ValidationError({'object_id': 'No such object.'})
             exclude = data.get('exclude', getattr(self.instance, 'exclude', False))
             if exclude and f'{content_type.app_label}.{content_type.model}' not in EXCLUDABLE:

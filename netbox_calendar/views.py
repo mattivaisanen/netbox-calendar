@@ -27,7 +27,7 @@ from netbox.views import generic
 from utilities.htmx import htmx_partial
 from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
-from . import agenda, filtersets, forms, ical, plugin_settings, recurrence, tables
+from . import agenda, filtersets, forms, ical, integrations, plugin_settings, recurrence, tables
 from .lookup import DEVICE_MATCHES, Targets, affected_devices, affected_vms, describe, filtered_objects
 from .models import (
     CalendarConnection, Event, EventObject, EventPerson, EventRole, EventType, FeedToken, PluginSetting, ended_ids,
@@ -273,7 +273,7 @@ class EventView(generic.ObjectView):
         upcoming = instance.occurrences(now, now + timedelta(days=3660))[:10] if instance.rrule else []
         return {
             'target_groups': target_groups(instance),
-            'targets_text': describe(instance, targets),
+            'targets_text': describe(instance, targets, user=request.user),
             'devices': devices.select_related('site', 'role', 'device_type').order_by('name')[:DEVICES_SHOWN],
             'devices_total': devices_total,
             'devices_more': max(devices_total - DEVICES_SHOWN, 0),
@@ -712,15 +712,15 @@ class EventICSView(ConditionalLoginRequiredMixin, View):
 
     def get(self, request, pk):
         event = get_object_or_404(Event.objects.restrict(request.user, 'view'), pk=pk)
-        text = ical.calendar([event], name=event.title, describe=_describe)
+        text = ical.calendar([event], name=event.title, describe=_describer(request.user))
         response = HttpResponse(text, content_type='text/calendar; charset=utf-8')
         response['Content-Disposition'] = f'attachment; filename="event-{event.pk}.ics"'
         return response
 
 
-def _describe(event):
-    # What the event concerns, in words (the iCal LOCATION).
-    return describe(event)
+def _describer(user):
+    """What an event concerns, in words (the iCal LOCATION), naming only objects `user` may view."""
+    return lambda event: describe(event, user=user)
 
 
 #
@@ -868,14 +868,15 @@ class FeedView(View):
             raise Http404
         user = found.user
         request.user = user
-        queryset = Event.objects.restrict(user, 'view')
+        # Events waiting for approval in netbox-change-approval are left out until approved.
+        queryset = Event.objects.restrict(user, 'view').exclude(pk__in=integrations.all_awaiting_approval())
         queryset = filtersets.EventFilterSet(request.GET, queryset, request=request).qs
         # Single events from the last 90 days on; repeating series whole.
         since = timezone.now() - timedelta(days=90)
         queryset = queryset.filter(Q(end__gte=since) | ~Q(rrule='')).select_related(
             'event_type', 'event_owner',
         ).prefetch_related('occurrence_changes')
-        text = ical.calendar(queryset, name=_('NetBox events'), describe=_describe, refresh='PT1H')
+        text = ical.calendar(queryset, name=_('NetBox events'), describe=_describer(user), refresh='PT1H')
         response = HttpResponse(text, content_type='text/calendar; charset=utf-8')
         # Shown inline, never cached by proxies: the feed is personal.
         response['Content-Disposition'] = 'inline; filename="netbox-events.ics"'

@@ -51,6 +51,8 @@ class TargetRuleTests(TestCase):
         # Access or core devices, in Here (and its child location Lab).
         self.assertAffected(self.acc_here, self.acc_lab, self.core_here)
         self.assertIn('Access or Core', describe(self.event))
+        # A reader without view permission on roles and locations sees them only counted.
+        self.assertEqual(describe(self.event, user=make_user('reader')), '3 other objects')
 
     def test_exclusion(self):
         self.link(self.access)

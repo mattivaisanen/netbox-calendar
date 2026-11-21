@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from ..models import CalendarConnection, Event, OccurrenceChange
 from ..sync import engine, tokens
+from ..sync.base import SyncError
 from ..sync.caldav import CalDAVProvider
 from ..sync.google import GoogleProvider
 from ..sync.outlook import OutlookProvider, graph_recurrence
@@ -137,6 +138,7 @@ class OutlookSyncTests(TestCase):
 GOOGLE_CONFIG = {
     **PLUGIN_CONFIG,
     'netbox_calendar': {**PLUGIN_CONFIG['netbox_calendar'], 'google_sync': True, 'caldav_sync': True,
+                        'caldav_allowed_hosts': '.example.com',
                         'google_client_id': 'client', 'google_client_secret': 'secret'},
 }
 
@@ -201,3 +203,17 @@ class GoogleAndCalDAVTests(TestCase):
         put = [url for method, url in requests_made if method == 'PUT']
         self.assertEqual(len(put), 1)
         self.assertEqual(tokens.decrypt(connection.refresh_token), 'app-password')
+
+    def test_caldav_only_allowed_servers(self):
+        provider = CalDAVProvider()
+        self.assertTrue(provider.allowed_url('https://cloud.example.com/dav/'))
+        self.assertFalse(provider.allowed_url('http://cloud.example.com/dav/'))
+        self.assertFalse(provider.allowed_url('https://intranet.local/dav/'))
+        self.assertFalse(provider.allowed_url('https://example.com.attacker.test/'))
+        # A redirect to another host is refused before anything is sent.
+        connection = CalendarConnection(user=self.user, provider='caldav', account='owner')
+        redirect = mock.Mock(status_code=302, headers={'Location': 'https://intranet.local/'})
+        with mock.patch('requests.request', return_value=redirect) as sent:
+            with self.assertRaises(SyncError):
+                provider._dav(connection, 'PROPFIND', 'https://cloud.example.com/dav/', password='x')
+        self.assertEqual(sent.call_count, 1)

@@ -31,7 +31,8 @@ setting except `reminder_grace_minutes`, `outlook_client_secret`,
 | `google_client_id` | `''` | Client ID of the Google OAuth client. |
 | `google_client_secret` | `''` | Its client secret. Only in `configuration.py`. |
 | `caldav_sync` | `False` | Users can connect a CalDAV calendar (Nextcloud, Fastmail, iCloud, ...) with an app password. See [calendar-sync.md](calendar-sync.md#caldav-setup). |
-| `caldav_server` | `''` | The one CalDAV server users connect to. Empty: users type an address. |
+| `caldav_server` | `''` | The one CalDAV server users connect to. Empty: users type an address on one of `caldav_allowed_hosts`. |
+| `caldav_allowed_hosts` | `''` | Host names users may connect to when `caldav_server` is empty, comma separated. `.example.org` allows every host under it. https only. With both empty, CalDAV can't be used. |
 | `sync_calendar_name` | `'NetBox'` | Name of the calendar NetBox creates in each connected account. |
 | `outlook_login_url`, `outlook_graph_url` | Microsoft's global cloud | For national clouds only. Only in `configuration.py`. |
 | `reminder_grace_minutes` | `60` | How late a reminder, start or end notice may still be sent, for example after the worker was down. Older ones are dropped. Only in `configuration.py`. |
@@ -95,5 +96,12 @@ without approval, either:
   }
   ```
 
-The calendar's background job updates event statuses directly in the
-database, so it is not held up by approval either way.
+The calendar's background job sets event statuses (in progress, done)
+itself, so it is not held up by approval either way. Those changes are in
+the event's change log under the name `netbox-calendar`.
+
+A new event that waits for approval is already listed in NetBox (marked
+pending), but it sends no notices or reminders, is left out of iCal feeds
+and is not pushed to connected calendars. Once the request is approved,
+everyone is told it was scheduled, as if it had been added without
+approval. A rejected event is deleted and nobody hears of it.

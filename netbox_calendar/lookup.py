@@ -24,7 +24,7 @@ from collections import OrderedDict
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from django.http import QueryDict
-from django.utils.translation import gettext as _
+from django.utils.translation import gettext as _, ngettext
 
 from netbox.registry import registry
 
@@ -36,6 +36,20 @@ NOT_FILTERS = {'page', 'per_page', 'sort', 'export', 'embedded', 'ordering', 'br
 
 #: Objects of these types may be excluded: criteria types, devices and VMs.
 DEVICE_LABELS = ('dcim.device', 'virtualization.virtualmachine')
+
+
+def linkable_types():
+    """
+    Object types events can be linked to and filtered by: NetBox objects
+    (those that can be bookmarked), this plugin's own left out, and tags (a
+    condition on devices and VMs). The event form and the REST API use the same list.
+    """
+    from core.models import ObjectType
+
+    linkable = ObjectType.objects.with_feature('bookmarks').exclude(app_label='netbox_calendar').values('pk')
+    return ContentType.objects.filter(
+        Q(pk__in=linkable) | Q(app_label='extras', model='tag'),
+    ).order_by('app_label', 'model')
 
 
 def filterset_for(model):
@@ -398,32 +412,81 @@ def _names(objects, limit=10):
     return names
 
 
-def describe(event, targets=None):
+def visible(objects, user):
+    """
+    The objects of `objects` that `user` may view, in order. Objects of one
+    type are checked with one query, against the user's object permissions.
+    """
+    if user is None or getattr(user, 'is_superuser', False):
+        return list(objects)
+    by_model = {}
+    for obj in objects:
+        by_model.setdefault(type(obj), []).append(obj.pk)
+    allowed = set()
+    for model, pks in by_model.items():
+        queryset = model.objects.filter(pk__in=pks)
+        if hasattr(queryset, 'restrict'):
+            queryset = queryset.restrict(user, 'view')
+        elif not user.has_perm(f'{model._meta.app_label}.view_{model._meta.model_name}'):
+            continue
+        allowed |= {(model, pk) for pk in queryset.values_list('pk', flat=True)}
+    return [obj for obj in objects if (type(obj), obj.pk) in allowed]
+
+
+def may_view_type(model, user):
+    """Whether `user` may view any object of `model` at all."""
+    if user is None or getattr(user, 'is_superuser', False):
+        return True
+    return user.has_perm(f'{model._meta.app_label}.view_{model._meta.model_name}')
+
+
+def describe(event, targets=None, user=None):
     """
     The rule in words, for messages and calendar entries: "Device role:
     Access or Core, and Location: Floor 2. Also: sw-1. Except: Location: Lab".
+
+    With `user`, only objects that user may view are named; the others are
+    counted ("2 other objects"). Calendar feeds, synced calendars and
+    e-mail are built per reader this way, like the event page.
     """
     targets = targets or Targets(event)
+    hidden = 0
+
+    def shown(objects):
+        nonlocal hidden
+        if user is None:
+            return list(objects)
+        found = visible(objects, user)
+        hidden += len(objects) - len(found)
+        return found
+
     parts = []
-    criteria = [
-        f'{type(objects[0])._meta.verbose_name.capitalize()}: {_(" or ").join(_names(objects))}'
-        for objects in targets.criteria.values()
-    ]
+    criteria = []
+    for objects in targets.criteria.values():
+        names = shown(objects)
+        if names:
+            criteria.append(f'{type(names[0])._meta.verbose_name.capitalize()}: {_(" or ").join(_names(names))}')
     if event.filter_object_type_id:
-        criteria.append(_('{type} matching {filter}').format(
-            type=targets.filter_model._meta.verbose_name_plural.capitalize() if targets.filter_model else '?',
-            filter=event.filter_query,
-        ))
+        model = targets.filter_model
+        if model is not None and may_view_type(model, user):
+            criteria.append(_('{type} matching {filter}').format(
+                type=model._meta.verbose_name_plural.capitalize(), filter=event.filter_query,
+            ))
+        else:
+            # The filter itself can name objects (name=sw-1): left out with the type.
+            hidden += 1
     if criteria:
         parts.append(_(', and ').join(criteria))
-    if targets.picked:
+    picked = shown(targets.picked)
+    if picked:
         label = _('Also') if criteria else _('Objects')
-        parts.append(f'{label}: {", ".join(_names(targets.picked))}')
-    if targets.excluded:
-        excluded = ', '.join(
-            f'{type(obj)._meta.verbose_name.capitalize()}: {obj}' for obj in targets.excluded[:10]
-        )
-        parts.append(_('Except: {objects}').format(objects=excluded))
+        parts.append(f'{label}: {", ".join(_names(picked))}')
+    excluded = shown(targets.excluded)
+    if excluded:
+        text = ', '.join(f'{type(obj)._meta.verbose_name.capitalize()}: {obj}' for obj in excluded[:10])
+        parts.append(_('Except: {objects}').format(objects=text))
+    if hidden:
+        parts.append(ngettext('{count} other object', '{count} other objects', hidden).format(count=hidden))
     return '. '.join(parts)
 
 
