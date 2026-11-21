@@ -26,6 +26,7 @@
   (`SHORT_DATETIME_FORMAT`, `SHORT_DATE_FORMAT`, `TIME_FORMAT`), so
   per-user date formats apply.
 - The change freeze badge loads only freeze events that can be running.
+- `pyproject.toml` declares no dependencies: NetBox brings them all.
 - **Calendar → Settings** has tabs: General, Notifications, iCal Feed,
   Outlook, Google and CalDAV. Each tab saves only its own settings, and
   shows how many of them are saved here.

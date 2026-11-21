@@ -11,12 +11,11 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Matti" }]
 requires-python = ">=3.10"
-# NetBox provides Django and everything else the plugin uses, python-dateutil
-# included. It is listed because recurrence.py uses it directly. The
+# NetBox brings everything the plugin uses (Django, python-dateutil,
+# requests, cryptography, defusedxml), so nothing is declared here. The
 # supported NetBox versions are checked at startup (min_version in
-# netbox_calendar/__init__.py). requests and cryptography (calendar sync)
-# come with NetBox too.
-dependencies = ["python-dateutil>=2.8", "requests>=2.28", "cryptography>=41"]
+# netbox_calendar/__init__.py).
+dependencies = []
 classifiers = [
     "Framework :: Django",
     "Programming Language :: Python :: 3",
