@@ -23,6 +23,7 @@ import threading
 from functools import partial
 
 from django.db import transaction
+from django.db.models import QuerySet
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
@@ -138,14 +139,29 @@ def event_saved(sender, instance, created, raw=False, **kwargs):
         queue(instance.pk, NoticeChoices.CHANGED)
 
 
+def _deleting_event(origin):
+    """
+    Whether a delete was started on an event (or a queryset of events).
+
+    Django deletes an event's links, people and occurrence changes before
+    the event row itself, so their post_delete handlers still find the
+    event in the database. The delete's `origin` tells the two apart.
+    """
+    if isinstance(origin, QuerySet):
+        return origin.model is Event
+    return isinstance(origin, Event)
+
+
 @receiver(post_save, sender=EventObject)
 @receiver(post_save, sender=EventPerson)
 @receiver(post_delete, sender=EventObject)
 @receiver(post_delete, sender=EventPerson)
-def part_changed(sender, instance, raw=False, **kwargs):
+def part_changed(sender, instance, raw=False, origin=None, **kwargs):
     if raw:
         return
     # A link removed because its event is being deleted: nothing to say.
+    if _deleting_event(origin):
+        return
     if Event.objects.filter(pk=instance.event_id).exists():
         queue(instance.event_id, NoticeChoices.CHANGED)
 
@@ -171,8 +187,11 @@ def occurrence_saved(sender, instance, raw=False, **kwargs):
 
 
 @receiver(post_delete, sender=OccurrenceChange)
-def occurrence_restored(sender, instance, **kwargs):
-    # Deleted along with its event: nothing to say.
+def occurrence_restored(sender, instance, origin=None, **kwargs):
+    # Deleted along with its event: nothing to say. Writing a journal entry
+    # here would leave it pointing at the deleted event, which breaks its page.
+    if _deleting_event(origin):
+        return
     event = Event.objects.filter(pk=instance.event_id).first()
     if event is None:
         return
