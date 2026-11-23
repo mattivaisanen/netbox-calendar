@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: deleting an event with a skipped or moved occurrence left a
+  journal entry pointing at the deleted event, and opening that entry
+  (for example from the event's change log) failed. Run `migrate` to
+  remove the entries already left behind.
 - **Calendar → Settings** has tabs: General, Notifications, iCal Feed,
   Outlook, Google and CalDAV. Each tab saves only its own settings, and
   shows how many of them are saved here.

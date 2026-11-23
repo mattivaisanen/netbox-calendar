@@ -306,6 +306,13 @@ class PageTests(TestCase):
             {'Holiday', 'Vendor late', 'Back on'},
         )
 
+    def test_delete_event_with_a_skipped_occurrence(self):
+        # Its skipped occurrence goes with it, and leaves no journal entry behind.
+        value = self.event.next_occurrence().start.isoformat()
+        self.client.post(url('event_occurrence', self.event.pk), {'occurrence': value, 'action': 'skip', 'reason': 'Holiday'})
+        self.event.delete()
+        self.assertFalse(JournalEntry.objects.exists())
+
     def test_journal_on_the_event_page(self):
         page = url('event', self.event.pk)
         self.assertContains(self.client.get(page), 'Add Entry')
